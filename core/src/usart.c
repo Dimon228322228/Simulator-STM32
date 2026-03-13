@@ -18,7 +18,7 @@ void usart_init(USART_State *usart, uint32_t base_addr) {
     usart->rx_count = 0;
     
     // Инициализация регистров
-    usart->regs.sr = 0;
+    usart->regs.sr = USART_SR_TXE | USART_SR_TC;  // TXE и TC установлены по умолчанию
     usart->regs.dr = 0;
     usart->regs.brr = 0;
     usart->regs.cr1 = 0;

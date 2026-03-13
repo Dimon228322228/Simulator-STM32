@@ -24,7 +24,7 @@ void nvic_disable_interrupt(NVIC_State *nvic, uint8_t irqn) {
     if (irqn < NVIC_NUM_INTERRUPTS) {
         uint32_t reg_index = irqn / 32;
         uint32_t bit_index = irqn % 32;
-        nvic->icer[reg_index] |= (1U << bit_index);
+        nvic->iser[reg_index] &= ~(1U << bit_index);  // Очистка бита в ISER
     }
 }
 
@@ -40,7 +40,7 @@ void nvic_clear_pending(NVIC_State *nvic, uint8_t irqn) {
     if (irqn < NVIC_NUM_INTERRUPTS) {
         uint32_t reg_index = irqn / 32;
         uint32_t bit_index = irqn % 32;
-        nvic->icpr[reg_index] |= (1U << bit_index);
+        nvic->ispr[reg_index] &= ~(1U << bit_index);  // Очистка бита в ISPR
     }
 }
 
