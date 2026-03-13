@@ -14,6 +14,8 @@ int main() {
     }
     
     gpio_init(&sim.gpio);
+    tim6_init(&sim.tim6);
+    nvic_init(&sim.nvic);
     
     cpu_reset(&sim.cpu);
     

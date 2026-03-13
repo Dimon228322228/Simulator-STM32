@@ -9,6 +9,9 @@ include_directories(core/include)
 # Добавляем исходные файлы ядра
 file(GLOB CORE_SOURCES "core/src/*.c")
 
+# Добавляем новые файлы TIM6 и NVIC
+list(APPEND CORE_SOURCES "core/src/tim6.c" "core/src/nvic.c")
+
 # Создаем библиотеку ядра (чтобы потом линковать с Go или тестами)
 add_library(core_static STATIC ${CORE_SOURCES})
 
