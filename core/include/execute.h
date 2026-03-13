@@ -6,9 +6,13 @@
 #include "gpio.h"
 #include "tim6.h"
 #include "nvic.h"
+#include "nvic_extended.h"
 #include "bus_matrix.h"
 #include "rcc.h"
 #include "dma.h"
+#include "usart.h"
+#include "spi.h"
+#include "i2c.h"
 
 // Структура симулятора, объединяющая CPU и память
 typedef struct {
@@ -17,9 +21,18 @@ typedef struct {
     GPIO_State gpio;
     TIM6_State tim6;
     NVIC_State nvic;
+    NVIC_Extended_State nvic_ext;
     Bus_Matrix_State bus;
     RCC_State rcc;
     DMA_State dma;
+    USART_State usart1;
+    USART_State usart2;
+    USART_State usart3;
+    SPI_State spi1;
+    SPI_State spi2;
+    SPI_State spi3;
+    I2C_State i2c1;
+    I2C_State i2c2;
 } Simulator;
 
 // Выполнить одну инструкцию

@@ -16,9 +16,20 @@ int main() {
     gpio_init(&sim.gpio);
     tim6_init(&sim.tim6);
     nvic_init(&sim.nvic);
+    nvic_extended_init(&sim.nvic_ext);
     bus_matrix_init(&sim.bus);
     rcc_init(&sim.rcc);
     dma_init(&sim.dma);
+    
+    // Инициализация периферии
+    usart_init(&sim.usart1, USART1_BASE_ADDR);
+    usart_init(&sim.usart2, USART2_BASE_ADDR);
+    usart_init(&sim.usart3, USART3_BASE_ADDR);
+    spi_init(&sim.spi1, SPI1_BASE_ADDR);
+    spi_init(&sim.spi2, SPI2_BASE_ADDR);
+    spi_init(&sim.spi3, SPI3_BASE_ADDR);
+    i2c_init(&sim.i2c1, I2C1_BASE_ADDR);
+    i2c_init(&sim.i2c2, I2C2_BASE_ADDR);
     
     cpu_reset(&sim.cpu);
     

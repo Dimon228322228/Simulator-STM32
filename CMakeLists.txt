@@ -13,9 +13,13 @@ file(GLOB CORE_SOURCES "core/src/*.c")
 list(APPEND CORE_SOURCES
     "core/src/tim6.c"
     "core/src/nvic.c"
+    "core/src/nvic_extended.c"
     "core/src/bus_matrix.c"
     "core/src/rcc.c"
     "core/src/dma.c"
+    "core/src/usart.c"
+    "core/src/spi.c"
+    "core/src/i2c.c"
 )
 
 # Создаем библиотеку ядра (чтобы потом линковать с Go или тестами)
