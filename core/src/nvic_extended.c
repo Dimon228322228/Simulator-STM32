@@ -23,55 +23,55 @@ void nvic_extended_init(NVIC_Extended_State *nvic) {
     nvic->interrupt_enabled = 0;
 }
 
-void nvic_enable_irq(NVIC_Extended_State *nvic, uint8_t irqn) {
+void nvic_ext_enable_irq(NVIC_Extended_State *nvic, uint8_t irqn) {
     if (irqn < NVIC_IRQ_NUMBER) {
         nvic->vectors[irqn].enabled = 1;
         nvic->interrupt_enabled |= (1U << irqn);
     }
 }
 
-void nvic_disable_irq(NVIC_Extended_State *nvic, uint8_t irqn) {
+void nvic_ext_disable_irq(NVIC_Extended_State *nvic, uint8_t irqn) {
     if (irqn < NVIC_IRQ_NUMBER) {
         nvic->vectors[irqn].enabled = 0;
         nvic->interrupt_enabled &= ~(1U << irqn);
     }
 }
 
-void nvic_set_priority(NVIC_Extended_State *nvic, uint8_t irqn, uint8_t priority) {
+void nvic_ext_set_priority(NVIC_Extended_State *nvic, uint8_t irqn, uint8_t priority) {
     if (irqn < NVIC_IRQ_NUMBER) {
         nvic->vectors[irqn].priority = priority;
     }
 }
 
-uint8_t nvic_get_priority(NVIC_Extended_State *nvic, uint8_t irqn) {
+uint8_t nvic_ext_get_priority(NVIC_Extended_State *nvic, uint8_t irqn) {
     if (irqn < NVIC_IRQ_NUMBER) {
         return nvic->vectors[irqn].priority;
     }
     return 0;
 }
 
-void nvic_set_pending(NVIC_Extended_State *nvic, uint8_t irqn) {
+void nvic_ext_set_pending(NVIC_Extended_State *nvic, uint8_t irqn) {
     if (irqn < NVIC_IRQ_NUMBER) {
         nvic->vectors[irqn].pending = 1;
         nvic->interrupt_pending |= (1U << irqn);
     }
 }
 
-void nvic_clear_pending(NVIC_Extended_State *nvic, uint8_t irqn) {
+void nvic_ext_clear_pending(NVIC_Extended_State *nvic, uint8_t irqn) {
     if (irqn < NVIC_IRQ_NUMBER) {
         nvic->vectors[irqn].pending = 0;
         nvic->interrupt_pending &= ~(1U << irqn);
     }
 }
 
-uint8_t nvic_is_active(NVIC_Extended_State *nvic, uint8_t irqn) {
+uint8_t nvic_ext_is_active(NVIC_Extended_State *nvic, uint8_t irqn) {
     if (irqn < NVIC_IRQ_NUMBER) {
         return nvic->vectors[irqn].active;
     }
     return 0;
 }
 
-uint8_t nvic_is_enabled(NVIC_Extended_State *nvic, uint8_t irqn) {
+uint8_t nvic_ext_is_enabled(NVIC_Extended_State *nvic, uint8_t irqn) {
     if (irqn < NVIC_IRQ_NUMBER) {
         return nvic->vectors[irqn].enabled;
     }

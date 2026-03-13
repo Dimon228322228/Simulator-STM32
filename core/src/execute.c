@@ -58,19 +58,19 @@ static inline uint32_t get_operand2(uint16_t instr, CPU_State *cpu) {
 }
 
 // Вспомогательная функция: обновление флагов N, Z, C, V
-static inline void update_flags(CPU_State *cpu, uint32_t result, uint32_t carry_in) {
+void update_flags(CPU_State *cpu, uint32_t result, uint32_t carry_in) {
     // N флаг (Negative) - устанавливается, если старший бит результата равен 1
     cpu->xpsr = (cpu->xpsr & ~0x80000000) | (result & 0x80000000 ? 0x80000000 : 0);
-    
+
     // Z флаг (Zero) - устанавливается, если результат равен 0
     cpu->xpsr = (cpu->xpsr & ~0x40000000) | (result == 0 ? 0x40000000 : 0);
-    
+
     // C флаг (Carry) - устанавливается при переносе
     // Для операций с переносом (ADC, SBC) этот флаг уже обновляется отдельно
 }
 
 // Вспомогательная функция: обновление флагов для арифметических операций
-static inline void update_arithmetic_flags(CPU_State *cpu, uint32_t a, uint32_t b, uint32_t result, uint8_t is_subtract) {
+void update_arithmetic_flags(CPU_State *cpu, uint32_t a, uint32_t b, uint32_t result, uint8_t is_subtract) {
     // N флаг (Negative) - устанавливается, если старший бит результата равен 1
     cpu->xpsr = (cpu->xpsr & ~0x80000000) | (result & 0x80000000 ? 0x80000000 : 0);
     
@@ -103,7 +103,7 @@ static inline uint32_t get_register_value(uint16_t instr, int reg_index, CPU_Sta
 }
 
 // Вспомогательная функция: проверка условия выполнения инструкции
-static inline uint8_t check_condition(uint16_t instr, CPU_State *cpu) {
+uint8_t check_condition(uint16_t instr, CPU_State *cpu) {
     // Получаем условный код (последние 4 бита для 16-битных инструкций)
     uint8_t cond = get_bits(instr, 0, 3);
     

@@ -132,7 +132,6 @@ int main(int argc, char *argv[]) {
     gpio_init(&sim.gpio);
     tim6_init(&sim.tim6);
     nvic_init(&sim.nvic);
-    nvic_extended_init(&sim.nvic_ext);
     bus_matrix_init(&sim.bus);
     rcc_init(&sim.rcc);
     dma_init(&sim.dma);

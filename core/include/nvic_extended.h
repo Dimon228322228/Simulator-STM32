@@ -90,34 +90,34 @@ typedef struct {
 void nvic_extended_init(NVIC_Extended_State *nvic);
 
 // Включение прерывания
-void nvic_enable_irq(NVIC_Extended_State *nvic, uint8_t irqn);
+void nvic_ext_enable_irq(NVIC_Extended_State *nvic, uint8_t irqn);
 
 // Выключение прерывания
-void nvic_disable_irq(NVIC_Extended_State *nvic, uint8_t irqn);
+void nvic_ext_disable_irq(NVIC_Extended_State *nvic, uint8_t irqn);
 
 // Установка приоритета прерывания
-void nvic_set_priority(NVIC_Extended_State *nvic, uint8_t irqn, uint8_t priority);
+void nvic_ext_set_priority(NVIC_Extended_State *nvic, uint8_t irqn, uint8_t priority);
 
 // Получение приоритета прерывания
-uint8_t nvic_get_priority(NVIC_Extended_State *nvic, uint8_t irqn);
+uint8_t nvic_ext_get_priority(NVIC_Extended_State *nvic, uint8_t irqn);
 
 // Установка прерывания как ожидающего
-void nvic_set_pending(NVIC_Extended_State *nvic, uint8_t irqn);
+void nvic_ext_set_pending(NVIC_Extended_State *nvic, uint8_t irqn);
 
 // Сброс прерывания как ожидающего
-void nvic_clear_pending(NVIC_Extended_State *nvic, uint8_t irqn);
+void nvic_ext_clear_pending(NVIC_Extended_State *nvic, uint8_t irqn);
 
 // Проверка, активно ли прерывание
-uint8_t nvic_is_active(NVIC_Extended_State *nvic, uint8_t irqn);
+uint8_t nvic_ext_is_active(NVIC_Extended_State *nvic, uint8_t irqn);
 
 // Проверка, включено ли прерывание
-uint8_t nvic_is_enabled(NVIC_Extended_State *nvic, uint8_t irqn);
+uint8_t nvic_ext_is_enabled(NVIC_Extended_State *nvic, uint8_t irqn);
 
 // Проверка, ожидает ли прерывание
-uint8_t nvic_is_pending(NVIC_Extended_State *nvic, uint8_t irqn);
+uint8_t nvic_ext_is_pending(NVIC_Extended_State *nvic, uint8_t irqn);
 
 // Обработка прерывания (основная логика)
-void nvic_handle_interrupt(NVIC_Extended_State *nvic, uint8_t irqn);
+void nvic_ext_handle_interrupt(NVIC_Extended_State *nvic, uint8_t irqn);
 
 // Проверка наличия активных прерываний
 uint8_t nvic_has_active_interrupt(NVIC_Extended_State *nvic);
