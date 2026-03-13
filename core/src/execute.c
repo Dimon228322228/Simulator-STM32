@@ -57,6 +57,41 @@ static inline uint32_t get_operand2(uint16_t instr, CPU_State *cpu) {
     return 0;
 }
 
+// Вспомогательная функция: обновление флагов N, Z, C, V
+static inline void update_flags(CPU_State *cpu, uint32_t result, uint32_t carry_in) {
+    // N флаг (Negative) - устанавливается, если старший бит результата равен 1
+    cpu->xpsr = (cpu->xpsr & ~0x80000000) | (result & 0x80000000 ? 0x80000000 : 0);
+    
+    // Z флаг (Zero) - устанавливается, если результат равен 0
+    cpu->xpsr = (cpu->xpsr & ~0x40000000) | (result == 0 ? 0x40000000 : 0);
+    
+    // C флаг (Carry) - устанавливается при переносе
+    // Для операций с переносом (ADC, SBC) этот флаг уже обновляется отдельно
+}
+
+// Вспомогательная функция: обновление флагов для арифметических операций
+static inline void update_arithmetic_flags(CPU_State *cpu, uint32_t a, uint32_t b, uint32_t result, uint8_t is_subtract) {
+    // N флаг (Negative) - устанавливается, если старший бит результата равен 1
+    cpu->xpsr = (cpu->xpsr & ~0x80000000) | (result & 0x80000000 ? 0x80000000 : 0);
+    
+    // Z флаг (Zero) - устанавливается, если результат равен 0
+    cpu->xpsr = (cpu->xpsr & ~0x40000000) | (result == 0 ? 0x40000000 : 0);
+    
+    // C флаг (Carry) - устанавливается при переносе
+    if (is_subtract) {
+        cpu->xpsr = (cpu->xpsr & ~0x100) | (a < b ? 0x100 : 0);
+    } else {
+        cpu->xpsr = (cpu->xpsr & ~0x100) | (result < a ? 0x100 : 0);
+    }
+    
+    // V флаг (Overflow) - устанавливается при переполнении
+    // Для signed arithmetic: V = (A_sign XOR B_sign) AND (A_sign XOR Result_sign)
+    uint8_t a_sign = (a & 0x80000000) ? 1 : 0;
+    uint8_t b_sign = (b & 0x80000000) ? 1 : 0;
+    uint8_t result_sign = (result & 0x80000000) ? 1 : 0;
+    cpu->xpsr = (cpu->xpsr & ~0x200) | ((a_sign ^ b_sign) & (a_sign ^ result_sign) ? 0x200 : 0);
+}
+
 // Вспомогательная функция: чтение регистра по индексу
 static inline uint32_t get_register_value(uint16_t instr, int reg_index, CPU_State *cpu) {
     if (reg_index < 8) {
@@ -64,6 +99,50 @@ static inline uint32_t get_register_value(uint16_t instr, int reg_index, CPU_Sta
     } else {
         // Для регистров R8-R12 используем специальные значения
         return cpu->regs[reg_index];
+    }
+}
+
+// Вспомогательная функция: проверка условия выполнения инструкции
+static inline uint8_t check_condition(uint16_t instr, CPU_State *cpu) {
+    // Получаем условный код (последние 4 бита для 16-битных инструкций)
+    uint8_t cond = get_bits(instr, 0, 3);
+    
+    // Проверяем условие
+    switch(cond) {
+        case 0b0000: // EQ - Equal
+            return (cpu->xpsr & 0x40000000) ? 1 : 0;
+        case 0b0001: // NE - Not Equal
+            return !(cpu->xpsr & 0x40000000);
+        case 0b0010: // CS - Carry Set
+            return (cpu->xpsr & 0x100) ? 1 : 0;
+        case 0b0011: // CC - Carry Clear
+            return !(cpu->xpsr & 0x100);
+        case 0b0100: // MI - Minus
+            return (cpu->xpsr & 0x80000000) ? 1 : 0;
+        case 0b0101: // PL - Plus
+            return !(cpu->xpsr & 0x80000000);
+        case 0b0110: // VS - Overflow Set
+            return (cpu->xpsr & 0x200) ? 1 : 0;
+        case 0b0111: // VC - Overflow Clear
+            return !(cpu->xpsr & 0x200);
+        case 0b1000: // HI - Higher
+            return ((cpu->xpsr & 0x100) && !(cpu->xpsr & 0x40000000)) ? 1 : 0;
+        case 0b1001: // LS - Lower or Same
+            return (!(cpu->xpsr & 0x100) || (cpu->xpsr & 0x40000000)) ? 1 : 0;
+        case 0b1010: // GE - Greater or Equal
+            return ((cpu->xpsr & 0x80000000) == (cpu->xpsr & 0x200)) ? 1 : 0;
+        case 0b1011: // LT - Less Than
+            return ((cpu->xpsr & 0x80000000) != (cpu->xpsr & 0x200)) ? 1 : 0;
+        case 0b1100: // GT - Greater Than
+            return (!(cpu->xpsr & 0x40000000) && ((cpu->xpsr & 0x80000000) == (cpu->xpsr & 0x200))) ? 1 : 0;
+        case 0b1101: // LE - Less or Equal
+            return (cpu->xpsr & 0x40000000) || ((cpu->xpsr & 0x80000000) != (cpu->xpsr & 0x200)) ? 1 : 0;
+        case 0b1110: // AL - Always (default)
+            return 1;
+        case 0b1111: // NV - Never (не используется в Thumb)
+            return 0;
+        default:
+            return 1; // По умолчанию всегда выполняется
     }
 }
 
@@ -84,6 +163,19 @@ void simulator_step(Simulator *sim) {
     // Для 16-битных инструкций определяем тип по маске
     uint16_t opcode = get_bits(instr, 11, 15);
     
+    // Проверяем условие выполнения инструкции (если есть суффикс cond)
+    uint8_t condition_met = 1;
+    if (opcode != 0b11111) { // Не BX инструкция
+        // Для большинства инструкций проверяем условие
+        condition_met = check_condition(instr, cpu);
+    }
+    
+    // Если условие не выполняется, пропускаем выполнение
+    if (!condition_met) {
+        // Просто увеличиваем PC и продолжаем
+        return;
+    }
+    
     // Для 32-битных инструкций (в будущем)
     // uint32_t instr32 = memory_read_word(mem, cpu->pc);
     
@@ -92,6 +184,8 @@ void simulator_step(Simulator *sim) {
             uint32_t rd = get_bits(instr, 8, 10);
             uint32_t imm8 = get_bits(instr, 0, 7);
             cpu->regs[rd] = imm8;
+            // Обновляем флаги для MOVS
+            update_flags(cpu, imm8, 0);
             printf("[EXEC] MOV R%u, #0x%02X -> R%u = 0x%08X\n", rd, imm8, rd, cpu->regs[rd]);
             break;
         }
@@ -103,10 +197,14 @@ void simulator_step(Simulator *sim) {
             uint32_t rd = get_bits(instr, 0, 2);
             
             if (sub_op == 0b00) { // ADD Rd, Rn, Rm
-                cpu->regs[rd] = cpu->regs[rn] + cpu->regs[rm];
+                uint32_t result = cpu->regs[rn] + cpu->regs[rm];
+                cpu->regs[rd] = result;
+                update_arithmetic_flags(cpu, cpu->regs[rn], cpu->regs[rm], result, 0);
                 printf("[EXEC] ADD R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
             } else if (sub_op == 0b01) { // SUB Rd, Rn, Rm
-                cpu->regs[rd] = cpu->regs[rn] - cpu->regs[rm];
+                uint32_t result = cpu->regs[rn] - cpu->regs[rm];
+                cpu->regs[rd] = result;
+                update_arithmetic_flags(cpu, cpu->regs[rn], cpu->regs[rm], result, 1);
                 printf("[EXEC] SUB R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
             } else {
                 printf("[EXEC] Unknown ADD/SUB variant: 0x%04X\n", instr);
@@ -131,7 +229,9 @@ void simulator_step(Simulator *sim) {
             uint32_t rd = get_bits(instr, 8, 10);
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t operand2 = get_operand2(instr, cpu);
-            cpu->regs[rd] = cpu->regs[rn] + operand2;
+            uint32_t result = cpu->regs[rn] + operand2;
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], operand2, result, 0);
             printf("[EXEC] ADD R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
             break;
         }
@@ -140,7 +240,9 @@ void simulator_step(Simulator *sim) {
             uint32_t rd = get_bits(instr, 8, 10);
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t operand2 = get_operand2(instr, cpu);
-            cpu->regs[rd] = cpu->regs[rn] - operand2;
+            uint32_t result = cpu->regs[rn] - operand2;
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], operand2, result, 1);
             printf("[EXEC] SUB R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
             break;
         }
@@ -150,6 +252,7 @@ void simulator_step(Simulator *sim) {
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t operand2 = get_operand2(instr, cpu);
             cpu->regs[rd] = cpu->regs[rn] & operand2;
+            update_flags(cpu, cpu->regs[rd], 0);
             printf("[EXEC] AND R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
             break;
         }
@@ -159,6 +262,7 @@ void simulator_step(Simulator *sim) {
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t operand2 = get_operand2(instr, cpu);
             cpu->regs[rd] = cpu->regs[rn] ^ operand2;
+            update_flags(cpu, cpu->regs[rd], 0);
             printf("[EXEC] EOR R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
             break;
         }
@@ -168,6 +272,7 @@ void simulator_step(Simulator *sim) {
             uint32_t rm = get_bits(instr, 3, 5);
             uint32_t imm5 = get_bits(instr, 6, 10);
             cpu->regs[rd] = cpu->regs[rm] << imm5;
+            update_flags(cpu, cpu->regs[rd], 0);
             printf("[EXEC] LSL R%u, R%u, #%u -> R%u = 0x%08X\n", rd, rm, imm5, rd, cpu->regs[rd]);
             break;
         }
@@ -177,6 +282,7 @@ void simulator_step(Simulator *sim) {
             uint32_t rm = get_bits(instr, 3, 5);
             uint32_t imm5 = get_bits(instr, 6, 10);
             cpu->regs[rd] = cpu->regs[rm] >> imm5;
+            update_flags(cpu, cpu->regs[rd], 0);
             printf("[EXEC] LSR R%u, R%u, #%u -> R%u = 0x%08X\n", rd, rm, imm5, rd, cpu->regs[rd]);
             break;
         }
@@ -191,6 +297,7 @@ void simulator_step(Simulator *sim) {
             } else {
                 cpu->regs[rd] = cpu->regs[rm] >> imm5;
             }
+            update_flags(cpu, cpu->regs[rd], 0);
             printf("[EXEC] ASR R%u, R%u, #%u -> R%u = 0x%08X\n", rd, rm, imm5, rd, cpu->regs[rd]);
             break;
         }
@@ -199,7 +306,10 @@ void simulator_step(Simulator *sim) {
             uint32_t rd = get_bits(instr, 8, 10);
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t operand2 = get_operand2(instr, cpu);
-            cpu->regs[rd] = cpu->regs[rn] + operand2 + (cpu->xpsr & 0x100 ? 1 : 0); // C-флаг
+            uint32_t carry = (cpu->xpsr & 0x100) ? 1 : 0;
+            uint32_t result = cpu->regs[rn] + operand2 + carry;
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], operand2, result, 0);
             printf("[EXEC] ADC R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
             break;
         }
@@ -208,7 +318,10 @@ void simulator_step(Simulator *sim) {
             uint32_t rd = get_bits(instr, 8, 10);
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t operand2 = get_operand2(instr, cpu);
-            cpu->regs[rd] = cpu->regs[rn] - operand2 - (cpu->xpsr & 0x100 ? 0 : 1); // C-флаг
+            uint32_t carry = (cpu->xpsr & 0x100) ? 0 : 1; // Инвертируем флаг для SBC
+            uint32_t result = cpu->regs[rn] - operand2 - carry;
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], operand2, result, 1);
             printf("[EXEC] SBC R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
             break;
         }
@@ -218,6 +331,7 @@ void simulator_step(Simulator *sim) {
             uint32_t rm = get_bits(instr, 3, 5);
             uint32_t imm5 = get_bits(instr, 6, 10);
             cpu->regs[rd] = (cpu->regs[rm] >> imm5) | (cpu->regs[rm] << (32 - imm5));
+            update_flags(cpu, cpu->regs[rd], 0);
             printf("[EXEC] ROR R%u, R%u, #%u -> R%u = 0x%08X\n", rd, rm, imm5, rd, cpu->regs[rd]);
             break;
         }
@@ -227,8 +341,7 @@ void simulator_step(Simulator *sim) {
             uint32_t operand2 = get_operand2(instr, cpu);
             uint32_t result = cpu->regs[rd] & operand2;
             // Обновляем флаги
-            cpu->xpsr = (cpu->xpsr & ~0x80000000) | (result == 0 ? 0x40000000 : 0); // Z-флаг
-            cpu->xpsr = (cpu->xpsr & ~0x80000000) | (result & 0x80000000 ? 0x80000000 : 0); // N-флаг
+            update_flags(cpu, result, 0);
             printf("[EXEC] TST R%u, #0x%08X -> Result = 0x%08X\n", rd, operand2, result);
             break;
         }
@@ -237,6 +350,7 @@ void simulator_step(Simulator *sim) {
             uint32_t rd = get_bits(instr, 8, 10);
             uint32_t rm = get_bits(instr, 3, 5);
             cpu->regs[rd] = ~cpu->regs[rm] + 1;
+            update_arithmetic_flags(cpu, 0, cpu->regs[rm], cpu->regs[rd], 1);
             printf("[EXEC] NEG R%u, R%u -> R%u = 0x%08X\n", rd, rm, rd, cpu->regs[rd]);
             break;
         }
@@ -246,9 +360,7 @@ void simulator_step(Simulator *sim) {
             uint32_t operand2 = get_operand2(instr, cpu);
             uint32_t result = cpu->regs[rd] - operand2;
             // Обновляем флаги
-            cpu->xpsr = (cpu->xpsr & ~0x80000000) | (result == 0 ? 0x40000000 : 0); // Z-флаг
-            cpu->xpsr = (cpu->xpsr & ~0x80000000) | (result & 0x80000000 ? 0x80000000 : 0); // N-флаг
-            cpu->xpsr = (cpu->xpsr & ~0x100) | (result > cpu->regs[rd] ? 0x100 : 0); // C-флаг
+            update_arithmetic_flags(cpu, cpu->regs[rd], operand2, result, 1);
             printf("[EXEC] CMP R%u, #0x%08X -> Result = 0x%08X\n", rd, operand2, result);
             break;
         }
@@ -258,8 +370,7 @@ void simulator_step(Simulator *sim) {
             uint32_t operand2 = get_operand2(instr, cpu);
             uint32_t result = cpu->regs[rd] + operand2;
             // Обновляем флаги
-            cpu->xpsr = (cpu->xpsr & ~0x80000000) | (result == 0 ? 0x40000000 : 0); // Z-флаг
-            cpu->xpsr = (cpu->xpsr & ~0x80000000) | (result & 0x80000000 ? 0x80000000 : 0); // N-флаг
+            update_arithmetic_flags(cpu, cpu->regs[rd], operand2, result, 0);
             printf("[EXEC] CMN R%u, #0x%08X -> Result = 0x%08X\n", rd, operand2, result);
             break;
         }
@@ -269,6 +380,7 @@ void simulator_step(Simulator *sim) {
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t operand2 = get_operand2(instr, cpu);
             cpu->regs[rd] = cpu->regs[rn] | operand2;
+            update_flags(cpu, cpu->regs[rd], 0);
             printf("[EXEC] ORR R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
             break;
         }
@@ -278,6 +390,7 @@ void simulator_step(Simulator *sim) {
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t rm = get_bits(instr, 0, 2);
             cpu->regs[rd] = cpu->regs[rn] * cpu->regs[rm];
+            update_flags(cpu, cpu->regs[rd], 0);
             printf("[EXEC] MUL R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
             break;
         }
@@ -287,6 +400,7 @@ void simulator_step(Simulator *sim) {
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t operand2 = get_operand2(instr, cpu);
             cpu->regs[rd] = cpu->regs[rn] & ~operand2;
+            update_flags(cpu, cpu->regs[rd], 0);
             printf("[EXEC] BIC R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
             break;
         }
@@ -295,6 +409,7 @@ void simulator_step(Simulator *sim) {
             uint32_t rd = get_bits(instr, 8, 10);
             uint32_t operand2 = get_operand2(instr, cpu);
             cpu->regs[rd] = ~operand2;
+            update_flags(cpu, cpu->regs[rd], 0);
             printf("[EXEC] MVN R%u, #0x%08X -> R%u = 0x%08X\n", rd, operand2, rd, cpu->regs[rd]);
             break;
         }
@@ -304,6 +419,7 @@ void simulator_step(Simulator *sim) {
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t imm12 = get_bits(instr, 0, 11);
             cpu->regs[rd] = cpu->regs[rn] + imm12;
+            update_arithmetic_flags(cpu, cpu->regs[rn], imm12, cpu->regs[rd], 0);
             printf("[EXEC] ADDW R%u, R%u, #0x%03X -> R%u = 0x%08X\n", rd, rn, imm12, rd, cpu->regs[rd]);
             break;
         }
@@ -313,6 +429,7 @@ void simulator_step(Simulator *sim) {
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t imm12 = get_bits(instr, 0, 11);
             cpu->regs[rd] = cpu->regs[rn] - imm12;
+            update_arithmetic_flags(cpu, cpu->regs[rn], imm12, cpu->regs[rd], 1);
             printf("[EXEC] SUBW R%u, R%u, #0x%03X -> R%u = 0x%08X\n", rd, rn, imm12, rd, cpu->regs[rd]);
             break;
         }
@@ -321,6 +438,7 @@ void simulator_step(Simulator *sim) {
             uint32_t rd = get_bits(instr, 8, 10);
             uint32_t imm16 = get_bits(instr, 0, 11) | (get_bits(instr, 12, 15) << 12);
             cpu->regs[rd] = imm16;
+            update_flags(cpu, imm16, 0);
             printf("[EXEC] MOVW R%u, #0x%04X -> R%u = 0x%08X\n", rd, imm16, rd, cpu->regs[rd]);
             break;
         }
@@ -329,6 +447,7 @@ void simulator_step(Simulator *sim) {
             uint32_t rd = get_bits(instr, 8, 10);
             uint32_t imm16 = get_bits(instr, 0, 11) | (get_bits(instr, 12, 15) << 12);
             cpu->regs[rd] = (cpu->regs[rd] & 0x0000FFFF) | (imm16 << 16);
+            update_flags(cpu, cpu->regs[rd], 0);
             printf("[EXEC] MOVT R%u, #0x%04X -> R%u = 0x%08X\n", rd, imm16, rd, cpu->regs[rd]);
             break;
         }
