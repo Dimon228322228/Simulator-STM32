@@ -16,6 +16,9 @@ int main() {
     gpio_init(&sim.gpio);
     tim6_init(&sim.tim6);
     nvic_init(&sim.nvic);
+    bus_matrix_init(&sim.bus);
+    rcc_init(&sim.rcc);
+    dma_init(&sim.dma);
     
     cpu_reset(&sim.cpu);
     

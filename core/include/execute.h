@@ -6,6 +6,9 @@
 #include "gpio.h"
 #include "tim6.h"
 #include "nvic.h"
+#include "bus_matrix.h"
+#include "rcc.h"
+#include "dma.h"
 
 // Структура симулятора, объединяющая CPU и память
 typedef struct {
@@ -14,6 +17,9 @@ typedef struct {
     GPIO_State gpio;
     TIM6_State tim6;
     NVIC_State nvic;
+    Bus_Matrix_State bus;
+    RCC_State rcc;
+    DMA_State dma;
 } Simulator;
 
 // Выполнить одну инструкцию
