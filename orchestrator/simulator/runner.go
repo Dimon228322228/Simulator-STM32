@@ -133,7 +133,7 @@ func (r *Runner) parseOutput(result *types.TaskResult, output string) {
 	// Регулярные выражения для парсинга
 	statsRegex := regexp.MustCompile(`\[STATS\] Instructions executed: (\d+)`)
 	cyclesRegex := regexp.MustCompile(`\[STATS\] CPU cycles: (\d+)`)
-	gpioRegex := regexp.MustCompile(`\[GPIO\] (.+?) = 0x([0-9A-Fa-f]+)`)
+	gpioRegex := regexp.MustCompile(`\[GPIO\] PORT_(\w)_ODR = 0x([0-9A-Fa-f]+)`)
 	uartRegex := regexp.MustCompile(`\[UART\] TX: 0x([0-9A-Fa-f]{2})`)
 	
 	// Регулярки для парсинга регистров из вывода CPU
@@ -158,9 +158,9 @@ func (r *Runner) parseOutput(result *types.TaskResult, output string) {
 
 		// Парсим GPIO состояние
 		if matches := gpioRegex.FindStringSubmatch(line); matches != nil {
-			regName := matches[1]
+			portName := matches[1]  // A, B, C...
 			if val, err := strconv.ParseUint(matches[2], 16, 32); err == nil {
-				result.GPIOState[regName] = uint32(val)
+				result.GPIOState[fmt.Sprintf("PORT_%s_ODR", portName)] = uint32(val)
 			}
 		}
 

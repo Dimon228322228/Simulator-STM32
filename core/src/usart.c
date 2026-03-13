@@ -76,6 +76,8 @@ void usart_write_register(USART_State *usart, uint32_t addr, uint32_t value) {
             break;
         case USART_DR_OFFSET:
             usart->regs.dr = value;
+            // Выводим переданный байт в stdout для оркестратора
+            printf("[UART] TX: 0x%02X\n", value & 0xFF);
             // При записи в DR, устанавливаем флаг TXE
             usart->regs.sr |= USART_SR_TXE;
             // Сбрасываем флаг TC

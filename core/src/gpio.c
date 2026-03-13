@@ -108,6 +108,8 @@ void gpio_write_register(GPIO_State *gpio, uint32_t addr, uint32_t value) {
             break;
         case GPIO_ODR_OFFSET:
             port->odr = value;
+            // Выводим состояние ODR для оркестратора
+            printf("[GPIO] PORT_%c_ODR = 0x%08X\n", 'A' + port_idx, value);
             break;
         case GPIO_BSRR_OFFSET:
             // Handle BSRR write (set/reset bits)
@@ -121,6 +123,8 @@ void gpio_write_register(GPIO_State *gpio, uint32_t addr, uint32_t value) {
                 // Set bits
                 port->odr |= (value >> 16);
             }
+            // Выводим обновлённое состояние ODR
+            printf("[GPIO] PORT_%c_ODR = 0x%08X\n", 'A' + port_idx, port->odr);
             break;
         case GPIO_BRR_OFFSET:
             // Handle BRR write (reset bits)
