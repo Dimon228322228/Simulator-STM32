@@ -30,11 +30,24 @@ add_executable(stm32_sim core/main.c)
 target_link_libraries(stm32_sim core_static)
 
 # Тесты
-add_executable(test_gpio test/test_gpio.c $<TARGET_OBJECTS:core_static>)
-add_executable(test_simulator test/test_simulator.c $<TARGET_OBJECTS:core_static>)
-add_executable(test_instructions test/test_instructions.c $<TARGET_OBJECTS:core_static>)
-add_executable(test_peripheral test/test_peripheral.c $<TARGET_OBJECTS:core_static>)
+add_executable(test_gpio test/test_gpio.c)
+target_link_libraries(test_gpio core_static)
 
-# qwen code к vs code подключить
-# router ai.ru
-# qwen coder next
+add_executable(test_simulator test/test_simulator.c)
+target_link_libraries(test_simulator core_static)
+
+add_executable(test_instructions test/test_instructions.c)
+target_link_libraries(test_instructions core_static)
+
+add_executable(test_peripheral test/test_peripheral.c)
+target_link_libraries(test_peripheral core_static)
+
+# Новые расширенные тесты
+add_executable(test_extended_instructions test/test_extended_instructions.c)
+target_link_libraries(test_extended_instructions core_static)
+
+add_executable(test_peripheral_extended test/test_peripheral_extended.c)
+target_link_libraries(test_peripheral_extended core_static)
+
+add_executable(test_integration test/test_integration.c)
+target_link_libraries(test_integration core_static)
