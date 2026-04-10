@@ -1,0 +1,11 @@
+{
+  "task_id": "demo-task-001",
+  "student_id": "student_test",
+  "lab_number": 1,
+  "binary": "BQUDGII=",
+  "timeout_sec": 5,
+  "config": {
+    "gpio_input": "0x0000",
+    "uart_input": ""
+  }
+}

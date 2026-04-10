@@ -1,0 +1,34 @@
+# Конфигурационный файл для STM32 Orchestrator
+
+# Redis/KeyDB настройки
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+# Очереди
+queues:
+  tasks: "simulator:tasks"
+  results: "simulator:results"
+
+# Симулятор
+simulator:
+  path: "./stm32_sim"
+  default_timeout: 5s
+  max_steps: 10000
+
+# Оркестратор
+orchestrator:
+  mode: "queue"  # "queue" или "file"
+  poll_interval: 1s
+  
+# Логирование
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "text"  # text, json
+
+# OpenTelemetry (опционально)
+opentelemetry:
+  enabled: false
+  exporter: "stdout"  # stdout, jaeger, otlp
+  service_name: "stm32-orchestrator"
