@@ -1,2 +1,14 @@
+# Build artifacts
 /build
 
+# Generated test binaries
+*.bin
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*~
+
+# Go orchestrator
+orchestrator/go.sum

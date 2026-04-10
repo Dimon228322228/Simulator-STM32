@@ -13,10 +13,12 @@
 #include "spi.h"
 #include "i2c.h"
 
-// Структура симулятора, объединяющая CPU и память
+/**
+ * Simulator – top-level state aggregating CPU, memory, and all peripherals.
+ */
 typedef struct {
     CPU_State cpu;
-    Memory mem;
+    Memory    mem;
     GPIO_State gpio;
     TIM6_State tim6;
     NVIC_State nvic;
@@ -33,10 +35,13 @@ typedef struct {
     I2C_State i2c2;
 } Simulator;
 
-// Выполнить одну инструкцию
+/** Execute a single instruction cycle. */
 void simulator_step(Simulator *sim);
 
-// Запустить выполнение до остановки (пока не реализовано) или бесконечно
-void simulator_run(Simulator *sim);
+/**
+ * Run the simulator for up to `max_steps` instructions, or until PC
+ * leaves the Flash region or hits the halt address (0xFFFFFFFF).
+ */
+void simulator_run(Simulator *sim, int max_steps);
 
-#endif // EXECUTE_H
+#endif /* EXECUTE_H */

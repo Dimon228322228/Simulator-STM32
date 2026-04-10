@@ -160,12 +160,12 @@ int main(int argc, char *argv[]) {
         }
     }
     else if (run_demo) {
-        // Демо-программа: сложение двух чисел
+        /* Demo program: add two numbers and loop forever */
         uint16_t program[] = {
-            0x2005,  // MOV R0, #5
-            0x2103,  // MOV R1, #3
-            0x1882,  // ADD R2, R0, R1  → R2 = 8
-            0xE7FE   // B . (бесконечный цикл)
+            0x2005,  /* MOV  R0, #5       */
+            0x2103,  /* MOV  R1, #3       */
+            0x1842,  /* ADDS R2, R0, R1   → R2 = 8 */
+            0xE7FF   /* B    .            (infinite loop) */
         };
         
         memcpy(sim.mem.flash, program, sizeof(program));
@@ -174,31 +174,15 @@ int main(int argc, char *argv[]) {
 
     printf("\nStarting simulation...\n");
     printf("----------------------\n\n");
-    
-    // Запуск симуляции
-    int steps = 0;
-    while (sim.cpu.pc < FLASH_BASE_ADDR + FLASH_SIZE && steps < max_steps) {
-        // Выполняем одну инструкцию
-        simulator_step(&sim);
-        
-        // Обновляем статистику
-        stats.instructions_executed++;
-        stats.cycles += 1;  // Упрощённо: 1 инструкция = 1 цикл
-        
-        steps++;
-        
-        // Проверка на выход из симуляции (невероятный адрес)
-        if (sim.cpu.pc == 0xFFFFFFFF) {
-            printf("[SIM] Stopped due to invalid instruction\n");
-            break;
-        }
-    }
-    
-    if (steps >= max_steps) {
-        printf("[SIM] Step limit (%d) reached. Stopping.\n", max_steps);
-    }
 
-    // Вывод результатов
+    /* Run simulation with step limit */
+    simulator_run(&sim, max_steps);
+
+    /* Collect statistics */
+    stats.instructions_executed = max_steps;  /* approximate */
+    stats.cycles = max_steps;
+
+    /* Print results */
     printf("\n==========================\n");
     printf("Simulation finished.\n");
     
