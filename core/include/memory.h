@@ -28,6 +28,10 @@ void memory_write_halfword(Memory *mem, uint32_t addr, uint16_t value);
 // Запись слова (32 бит)
 void memory_write_word(Memory *mem, uint32_t addr, uint32_t value);
 
+// Secure functions with boundary checking
+bool memory_write_halfword_safe(Memory *mem, uint32_t addr, uint16_t value);
+bool memory_write_word_safe(Memory *mem, uint32_t addr, uint32_t value);
+
 uint16_t memory_read_halfword(Memory *mem, uint32_t addr);
 
 // Чтение 32-битного слова (для периферии)

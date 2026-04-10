@@ -30,7 +30,9 @@ static inline uint32_t get_operand2(uint16_t instr, CPU_State *cpu) {
         // Регистр с сдвигом
         uint32_t rm = get_bits(instr, 0, 2);
         uint32_t shift_type = get_bits(instr, 3, 4);
-        uint32_t shift_imm = get_bits(instr, 6, 10);
+        uint32_t shift_imm_full = get_bits(instr, 6, 10);
+        // Ограничиваем количество битов для сдвига, чтобы избежать неопределенного поведения
+        uint32_t shift_imm = shift_imm_full & 0x1F; // Маска для 5 битов (0-31)
         
         // Простая реализация сдвигов
         switch(shift_type) {
@@ -41,12 +43,20 @@ static inline uint32_t get_operand2(uint16_t instr, CPU_State *cpu) {
             case 0b10: // ASR
                 if (cpu->regs[rm] & 0x80000000) {
                     // Отрицательное число - арифметический сдвиг
-                    return (cpu->regs[rm] >> shift_imm) | (0xFFFFFFFF << (32 - shift_imm));
+                    if (shift_imm == 0) {
+                        return cpu->regs[rm];
+                    } else {
+                        return (cpu->regs[rm] >> shift_imm) | (0xFFFFFFFFU << (32 - shift_imm));
+                    }
                 } else {
                     return cpu->regs[rm] >> shift_imm;
                 }
             case 0b11: // ROR
-                return (cpu->regs[rm] >> shift_imm) | (cpu->regs[rm] << (32 - shift_imm));
+                if (shift_imm == 0) {
+                    return cpu->regs[rm]; // Если сдвиг равен 0, возвращаем исходное значение
+                } else {
+                    return (cpu->regs[rm] >> shift_imm) | (cpu->regs[rm] << (32 - shift_imm));
+                }
         }
     } else if (op2_type == 0b10) {
         // Регистр (без сдвига)
@@ -146,11 +156,393 @@ uint8_t check_condition(uint16_t instr, CPU_State *cpu) {
     }
 }
 
+// Обработчик арифметических инструкций
+static void handle_arithmetic(uint16_t instr, uint16_t opcode, CPU_State *cpu, Memory *mem) {
+    switch(opcode) {
+        case 0b00000: { // ADD Rd, Rn, #imm3
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm3 = get_bits(instr, 6, 8);
+            uint32_t result = cpu->regs[rn] + imm3;
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], imm3, result, 0);
+            printf("[EXEC] ADD R%u, R%u, #%u -> R%u = 0x%08X\n", rd, rn, imm3, rd, cpu->regs[rd]);
+            break;
+        }
+        case 0b00001: { // SUB Rd, Rn, #imm3
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm3 = get_bits(instr, 6, 8);
+            uint32_t result = cpu->regs[rn] - imm3;
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], imm3, result, 1);
+            printf("[EXEC] SUB R%u, R%u, #%u -> R%u = 0x%08X\n", rd, rn, imm3, rd, cpu->regs[rd]);
+            break;
+        }
+        case 0b00010: { // ADD Rd, Rn, Rm
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t result = cpu->regs[rn] + cpu->regs[rm];
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], cpu->regs[rm], result, 0);
+            printf("[EXEC] ADD R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
+            break;
+        }
+        case 0b00011: { // SUB Rd, Rn, Rm
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t result = cpu->regs[rn] - cpu->regs[rm];
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], cpu->regs[rm], result, 1);
+            printf("[EXEC] SUB R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
+            break;
+        }
+        // Handle other arithmetic instructions as needed...
+        default:
+            break;
+    }
+}
+
+// Обработчик load/store инструкций
+static void handle_load_store(uint16_t instr, uint16_t opcode, CPU_State *cpu, Memory *mem) {
+    switch(opcode) {
+        case 0b01010: { // STR Rd, [Rn, Rm]
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t addr = cpu->regs[rn] + cpu->regs[rm];
+            if (!memory_write_word_safe(mem, addr, cpu->regs[rd])) {
+                printf("[ERROR] Invalid memory write at address 0x%08X\n", addr);
+                cpu->pc = 0xFFFFFFFF; // Ошибка выполнения
+                break;
+            }
+            printf("[EXEC] STR R%u, [R%u, R%u]\n", rd, rn, rm);
+            break;
+        }
+        case 0b01011: { // STRH Rd, [Rn, Rm]
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t addr = cpu->regs[rn] + cpu->regs[rm];
+            if (!memory_write_halfword_safe(mem, addr, cpu->regs[rd] & 0xFFFF)) {
+                printf("[ERROR] Invalid halfword memory write at address 0x%08X\n", addr);
+                cpu->pc = 0xFFFFFFFF; // Ошибка выполнения
+                break;
+            }
+            printf("[EXEC] STRH R%u, [R%u, R%u]\n", rd, rn, rm);
+            break;
+        }
+        case 0b10100: { // STR Rd, [SP, #imm8]
+            uint32_t rd = get_bits(instr, 8, 10);
+            uint32_t imm8 = get_bits(instr, 0, 7);
+            uint32_t addr = cpu->regs[13] + (imm8 << 2);
+            if (!memory_write_word_safe(mem, addr, cpu->regs[rd])) {
+                printf("[ERROR] Invalid memory write at address 0x%08X\n", addr);
+                cpu->pc = 0xFFFFFFFF; // Ошибка выполнения
+                break;
+            }
+            printf("[EXEC] STR R%u, [SP, #%u]\n", rd, imm8);
+            break;
+        }
+        case 0b11000: { // STR Rd, [Rn, #imm5]
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm5 = get_bits(instr, 6, 10);
+            uint32_t addr = cpu->regs[rn] + (imm5 << 2);
+            if (!memory_write_word_safe(mem, addr, cpu->regs[rd])) {
+                printf("[ERROR] Invalid memory write at address 0x%08X\n", addr);
+                cpu->pc = 0xFFFFFFFF; // Ошибка выполнения
+                break;
+            }
+            printf("[EXEC] STR R%u, [R%u, #%u]\n", rd, rn, imm5);
+            break;
+        }
+        case 0b11001: { // LDR Rd, [Rn, #imm5]
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm5 = get_bits(instr, 6, 10);
+            uint32_t addr = cpu->regs[rn] + (imm5 << 2);
+            // Проверяем, что адрес в допустимом диапазоне для чтения
+            if ((addr >= FLASH_BASE_ADDR && addr + 3 < (FLASH_BASE_ADDR + FLASH_SIZE)) ||
+                (addr >= SRAM_BASE_ADDR && addr + 3 < (SRAM_BASE_ADDR + SRAM_SIZE))) {
+                cpu->regs[rd] = memory_read_word(mem, addr);
+            } else {
+                printf("[ERROR] Invalid memory read at address 0x%08X\n", addr);
+                cpu->regs[rd] = 0xFFFFFFFF; // Значение ошибки
+            }
+            printf("[EXEC] LDR R%u, [R%u, #%u] -> R%u = 0x%08X\n", rd, rn, imm5, rd, cpu->regs[rd]);
+            break;
+        }
+        // Add other load/store handlers here...
+        default:
+            break;
+    }
+}
+
+// Обработчик инструкций ветвления
+static void handle_branch(uint16_t instr, uint16_t opcode, CPU_State *cpu, Memory *mem) {
+    switch(opcode) {
+        case 0b11010: { // Conditional branch (B cond)
+            int32_t offset = sign_extend(get_bits(instr, 0, 7), 8);
+            uint32_t target = cpu->pc + (offset << 1);
+            cpu->pc = target;
+            printf("[EXEC] B.cond (Offset: %d)\n", offset);
+            break;
+        }
+        case 0b11100: { // Unconditional Branch (B)
+            int32_t offset = sign_extend(get_bits(instr, 0, 10), 11);
+            uint32_t target = cpu->pc + (offset << 1);
+            printf("[EXEC] B 0x%08X (Offset: %d)\n", target, offset);
+            cpu->pc = target;
+            break;
+        }
+        case 0b11111: { // BX Rd
+            uint32_t rd = get_bits(instr, 3, 5);
+            uint32_t target = cpu->regs[rd];
+            cpu->pc = target & ~0x1U;
+            printf("[EXEC] BX R%u -> PC = 0x%08X\n", rd, cpu->pc);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+// Обработчик прочих инструкций
+static void handle_misc(uint16_t instr, uint16_t opcode, CPU_State *cpu, Memory *mem) {
+    switch(opcode) {
+        case 0b00100: { // MOV Rd, #imm8 (синтаксис: MOVS Rd, #imm8)
+            uint32_t rd = get_bits(instr, 8, 10);
+            uint32_t imm8 = get_bits(instr, 0, 7);
+            cpu->regs[rd] = imm8;
+            // Обновляем флаги для MOVS
+            update_flags(cpu, imm8, 0);
+            printf("[EXEC] MOV R%u, #0x%02X -> R%u = 0x%08X\n", rd, imm8, rd, cpu->regs[rd]);
+            break;
+        }
+        case 0b10000: { // STRB Rd, [Rn, #imm5]
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm5 = get_bits(instr, 6, 10);
+            uint32_t addr = cpu->regs[rn] + imm5;
+            memory_write_byte(mem, addr, cpu->regs[rd] & 0xFF);
+            printf("[EXEC] STRB R%u, [R%u, #%u]\n", rd, rn, imm5);
+            break;
+        }
+        // Add other misc handlers here...
+        default:
+            printf("[EXEC] Unknown Instruction: 0x%04X at PC 0x%08X\n", instr, current_pc);
+            // For safety, stop simulation when encountering an unknown instruction
+            cpu->pc = 0xFFFFFFFF; // Impossible address to stop
+            break;
+    }
+}
+
+// Обработчик арифметических инструкций
+static void handle_arithmetic(uint16_t instr, uint16_t opcode, CPU_State *cpu, Memory *mem) {
+    switch(opcode) {
+        case 0b00000: { // ADD Rd, Rn, #imm3
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm3 = get_bits(instr, 6, 8);
+            uint32_t result = cpu->regs[rn] + imm3;
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], imm3, result, 0);
+            printf("[EXEC] ADD R%u, R%u, #%u -> R%u = 0x%08X\n", rd, rn, imm3, rd, cpu->regs[rd]);
+            break;
+        }
+        case 0b00001: { // SUB Rd, Rn, #imm3
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm3 = get_bits(instr, 6, 8);
+            uint32_t result = cpu->regs[rn] - imm3;
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], imm3, result, 1);
+            printf("[EXEC] SUB R%u, R%u, #%u -> R%u = 0x%08X\n", rd, rn, imm3, rd, cpu->regs[rd]);
+            break;
+        }
+        case 0b00010: { // ADD Rd, Rn, Rm
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t result = cpu->regs[rn] + cpu->regs[rm];
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], cpu->regs[rm], result, 0);
+            printf("[EXEC] ADD R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
+            break;
+        }
+        case 0b00011: { // SUB Rd, Rn, Rm
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t result = cpu->regs[rn] - cpu->regs[rm];
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], cpu->regs[rm], result, 1);
+            printf("[EXEC] SUB R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
+            break;
+        }
+        // Handle other arithmetic instructions as needed...
+        default:
+            break;
+    }
+}
+
+// Обработчик load/store инструкций
+static void handle_load_store(uint16_t instr, uint16_t opcode, CPU_State *cpu, Memory *mem) {
+    switch(opcode) {
+        case 0b01010: { // STR Rd, [Rn, Rm]
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t addr = cpu->regs[rn] + cpu->regs[rm];
+            if (!memory_write_word_safe(mem, addr, cpu->regs[rd])) {
+                printf("[ERROR] Invalid memory write at address 0x%08X\n", addr);
+                cpu->pc = 0xFFFFFFFF; // Ошибка выполнения
+                break;
+            }
+            printf("[EXEC] STR R%u, [R%u, R%u]\n", rd, rn, rm);
+            break;
+        }
+        case 0b01011: { // STRH Rd, [Rn, Rm]
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t addr = cpu->regs[rn] + cpu->regs[rm];
+            if (!memory_write_halfword_safe(mem, addr, cpu->regs[rd] & 0xFFFF)) {
+                printf("[ERROR] Invalid halfword memory write at address 0x%08X\n", addr);
+                cpu->pc = 0xFFFFFFFF; // Ошибка выполнения
+                break;
+            }
+            printf("[EXEC] STRH R%u, [R%u, R%u]\n", rd, rn, rm);
+            break;
+        }
+        case 0b10100: { // STR Rd, [SP, #imm8]
+            uint32_t rd = get_bits(instr, 8, 10);
+            uint32_t imm8 = get_bits(instr, 0, 7);
+            uint32_t addr = cpu->regs[13] + (imm8 << 2);
+            if (!memory_write_word_safe(mem, addr, cpu->regs[rd])) {
+                printf("[ERROR] Invalid memory write at address 0x%08X\n", addr);
+                cpu->pc = 0xFFFFFFFF; // Ошибка выполнения
+                break;
+            }
+            printf("[EXEC] STR R%u, [SP, #%u]\n", rd, imm8);
+            break;
+        }
+        case 0b11000: { // STR Rd, [Rn, #imm5]
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm5 = get_bits(instr, 6, 10);
+            uint32_t addr = cpu->regs[rn] + (imm5 << 2);
+            if (!memory_write_word_safe(mem, addr, cpu->regs[rd])) {
+                printf("[ERROR] Invalid memory write at address 0x%08X\n", addr);
+                cpu->pc = 0xFFFFFFFF; // Ошибка выполнения
+                break;
+            }
+            printf("[EXEC] STR R%u, [R%u, #%u]\n", rd, rn, imm5);
+            break;
+        }
+        case 0b11001: { // LDR Rd, [Rn, #imm5]
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm5 = get_bits(instr, 6, 10);
+            uint32_t addr = cpu->regs[rn] + (imm5 << 2);
+            // Проверяем, что адрес в допустимом диапазоне для чтения
+            if ((addr >= FLASH_BASE_ADDR && addr + 3 < (FLASH_BASE_ADDR + FLASH_SIZE)) ||
+                (addr >= SRAM_BASE_ADDR && addr + 3 < (SRAM_BASE_ADDR + SRAM_SIZE))) {
+                cpu->regs[rd] = memory_read_word(mem, addr);
+            } else {
+                printf("[ERROR] Invalid memory read at address 0x%08X\n", addr);
+                cpu->regs[rd] = 0xFFFFFFFF; // Значение ошибки
+            }
+            printf("[EXEC] LDR R%u, [R%u, #%u] -> R%u = 0x%08X\n", rd, rn, imm5, rd, cpu->regs[rd]);
+            break;
+        }
+        // Add other load/store handlers here...
+        default:
+            break;
+    }
+}
+
+// Обработчик инструкций ветвления
+static void handle_branch(uint16_t instr, uint16_t opcode, CPU_State *cpu, Memory *mem) {
+    switch(opcode) {
+        case 0b11010: { // Conditional branch (B cond)
+            int32_t offset = sign_extend(get_bits(instr, 0, 7), 8);
+            uint32_t target = cpu->pc + (offset << 1);
+            cpu->pc = target;
+            printf("[EXEC] B.cond (Offset: %d)\n", offset);
+            break;
+        }
+        case 0b11100: { // Unconditional Branch (B)
+            int32_t offset = sign_extend(get_bits(instr, 0, 10), 11);
+            uint32_t target = cpu->pc + (offset << 1);
+            printf("[EXEC] B 0x%08X (Offset: %d)\n", target, offset);
+            cpu->pc = target;
+            break;
+        }
+        case 0b11111: { // BX Rd
+            uint32_t rd = get_bits(instr, 3, 5);
+            uint32_t target = cpu->regs[rd];
+            cpu->pc = target & ~0x1U;
+            printf("[EXEC] BX R%u -> PC = 0x%08X\n", rd, cpu->pc);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+// Обработчик прочих инструкций
+static void handle_misc(uint16_t instr, uint16_t opcode, CPU_State *cpu, Memory *mem) {
+    switch(opcode) {
+        case 0b00100: { // MOV Rd, #imm8 (синтаксис: MOVS Rd, #imm8)
+            uint32_t rd = get_bits(instr, 8, 10);
+            uint32_t imm8 = get_bits(instr, 0, 7);
+            cpu->regs[rd] = imm8;
+            // Обновляем флаги для MOVS
+            update_flags(cpu, imm8, 0);
+            printf("[EXEC] MOV R%u, #0x%02X -> R%u = 0x%08X\n", rd, imm8, rd, cpu->regs[rd]);
+            break;
+        }
+        case 0b10000: { // STRB Rd, [Rn, #imm5]
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm5 = get_bits(instr, 6, 10);
+            uint32_t addr = cpu->regs[rn] + imm5;
+            memory_write_byte(mem, addr, cpu->regs[rd] & 0xFF);
+            printf("[EXEC] STRB R%u, [R%u, #%u]\n", rd, rn, imm5);
+            break;
+        }
+        // Add other misc handlers here...
+        default:
+            printf("[EXEC] Unknown Instruction: 0x%04X at PC 0x%08X\n", instr, current_pc);
+            // For safety, stop simulation when encountering an unknown instruction
+            cpu->pc = 0xFFFFFFFF; // Impossible address to stop
+            break;
+    }
+}
+
 void simulator_step(Simulator *sim) {
     CPU_State *cpu = &sim->cpu;
     Memory *mem = &sim->mem;
 
-    // 1. FETCH: Считываем 16-битную инструкцию по текущему PC
+    // 1. FETCH: Проверяем, что PC находится в допустимом диапазоне Flash
+    if (cpu->pc < FLASH_BASE_ADDR || cpu->pc >= (FLASH_BASE_ADDR + FLASH_SIZE)) {
+        printf("[ERROR] PC out of Flash range: 0x%08X\n", cpu->pc);
+        cpu->pc = 0xFFFFFFFF; // Невероятный адрес для останова
+        return;
+    }
+    
+    // Проверяем, что при чтении halfword не выйдем за границу
+    if (cpu->pc + 1 >= (FLASH_BASE_ADDR + FLASH_SIZE)) {
+        printf("[ERROR] PC would cause halfword read out of Flash range: 0x%08X\n", cpu->pc);
+        cpu->pc = 0xFFFFFFFF; // Невероятный адрес для останова
+        return;
+    }
+    
+    // Считываем 16-битную инструкцию по текущему PC
     uint16_t instr = memory_read_halfword(mem, cpu->pc);
     
     // Увеличиваем PC (в Thumb режиме PC увеличивается на 2 после чтения)
@@ -346,7 +738,14 @@ void simulator_step(Simulator *sim) {
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t rd = get_bits(instr, 0, 2);
             uint32_t addr = cpu->regs[rn] + cpu->regs[rm];
-            memory_write_word(mem, addr, cpu->regs[rd]);
+            if (!memory_write_word_safe(mem, addr, cpu->regs[rd])) {
+                printf("[ERROR] Invalid memory write at address 0x%08X\n", addr);
+                cpu->pc = 0xFFFFFFFF; // Ошибка выполнения
+                break;
+            }
+            printf("[EXEC] STR R%u, [R%u, R%u]\n", rd, rn, rm);
+            break;
+        }
             printf("[EXEC] STR R%u, [R%u, R%u]\n", rd, rn, rm);
             break;
         }
@@ -445,7 +844,11 @@ void simulator_step(Simulator *sim) {
             uint32_t rd = get_bits(instr, 8, 10);
             uint32_t imm8 = get_bits(instr, 0, 7);
             uint32_t addr = cpu->regs[13] + (imm8 << 2);
-            memory_write_word(mem, addr, cpu->regs[rd]);
+            if (!memory_write_word_safe(mem, addr, cpu->regs[rd])) {
+                printf("[ERROR] Invalid memory write at address 0x%08X\n", addr);
+                cpu->pc = 0xFFFFFFFF; // Ошибка выполнения
+                break;
+            }
             printf("[EXEC] STR R%u, [SP, #%u]\n", rd, imm8);
             break;
         }
@@ -481,7 +884,14 @@ void simulator_step(Simulator *sim) {
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t imm5 = get_bits(instr, 6, 10);
             uint32_t addr = cpu->regs[rn] + (imm5 << 2);
-            memory_write_word(mem, addr, cpu->regs[rd]);
+            if (!memory_write_word_safe(mem, addr, cpu->regs[rd])) {
+                printf("[ERROR] Invalid memory write at address 0x%08X\n", addr);
+                cpu->pc = 0xFFFFFFFF; // Ошибка выполнения
+                break;
+            }
+            printf("[EXEC] STR R%u, [R%u, #%u]\n", rd, rn, imm5);
+            break;
+        }
             printf("[EXEC] STR R%u, [R%u, #%u]\n", rd, rn, imm5);
             break;
         }
@@ -491,7 +901,14 @@ void simulator_step(Simulator *sim) {
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t imm5 = get_bits(instr, 6, 10);
             uint32_t addr = cpu->regs[rn] + (imm5 << 2);
-            cpu->regs[rd] = memory_read_word(mem, addr);
+            // Проверяем, что адрес в допустимом диапазоне для чтения
+            if ((addr >= FLASH_BASE_ADDR && addr + 3 < (FLASH_BASE_ADDR + FLASH_SIZE)) ||
+                (addr >= SRAM_BASE_ADDR && addr + 3 < (SRAM_BASE_ADDR + SRAM_SIZE))) {
+                cpu->regs[rd] = memory_read_word(mem, addr);
+            } else {
+                printf("[ERROR] Invalid memory read at address 0x%08X\n", addr);
+                cpu->regs[rd] = 0xFFFFFFFF; // Значение ошибки
+            }
             printf("[EXEC] LDR R%u, [R%u, #%u] -> R%u = 0x%08X\n", rd, rn, imm5, rd, cpu->regs[rd]);
             break;
         }

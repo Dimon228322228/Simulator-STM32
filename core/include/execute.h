@@ -3,7 +3,7 @@
 
 #include "cpu_state.h"
 #include "memory.h"
-#include "gpio.h"
+
 #include "tim6.h"
 #include "nvic.h"
 #include "bus_matrix.h"
