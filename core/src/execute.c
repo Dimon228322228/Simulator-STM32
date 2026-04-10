@@ -117,12 +117,7 @@ void simulator_step(Simulator *sim) {
     /* 2. DECODE: extract opcode (bits 15-11) */
     uint16_t opcode = get_bits(instr, 11, 15);
 
-    /* 3. Condition check (only for conditional branches) */
-    if (opcode == 0b11010) {
-        if (!check_condition(instr, cpu)) {
-            return;   /* condition not met – skip execution */
-        }
-    }
+    /* 3. EXECUTE — conditional branch check is inside the branch case */
 
     /* 4. EXECUTE */
     switch (opcode) {
@@ -437,15 +432,23 @@ void simulator_step(Simulator *sim) {
     /*  Branch                                                            */
     /* ================================================================ */
 
-    case 0b11010: {  /* B.cond label  (conditional branch) */
+    case 0b11010:  /* B.cond (condition 0xxx: EQ..VC) */
+    case 0b11011: { /* B.cond (condition 1xxx: HI..LE) or SVC (1111) */
+        uint8_t cond = get_bits(instr, 8, 11);
+
+        if (cond == 0b1111) {
+            /* SVC / SWI – not implemented */
+            fprintf(stderr, "[EXEC] SVC at PC 0x%08X – halting\n", fetch_pc);
+            cpu->pc = 0xFFFFFFFFU;
+            break;
+        }
+
+        /* Conditional branch */
+        if (!check_condition(instr, cpu)) {
+            break;  /* condition not met – fall through */
+        }
         int32_t offset = sign_extend(get_bits(instr, 0, 7), 8);
         cpu->pc = cpu->pc + (offset << 1);
-        break;
-    }
-
-    case 0b11011: {  /* SVC / SWI – not implemented */
-        fprintf(stderr, "[EXEC] SVC at PC 0x%08X – halting\n", fetch_pc);
-        cpu->pc = 0xFFFFFFFFU;
         break;
     }
 
