@@ -47,6 +47,18 @@ void memory_write_byte(Memory *mem, uint32_t addr, uint8_t value) {
     // Flash запись обычно игнорируется при выполнении (нужна отдельная логика прошивки)
 }
 
+void memory_write_halfword(Memory *mem, uint32_t addr, uint16_t value) {
+    memory_write_byte(mem, addr, value & 0xFF);
+    memory_write_byte(mem, addr + 1, (value >> 8) & 0xFF);
+}
+
+void memory_write_word(Memory *mem, uint32_t addr, uint32_t value) {
+    memory_write_byte(mem, addr, value & 0xFF);
+    memory_write_byte(mem, addr + 1, (value >> 8) & 0xFF);
+    memory_write_byte(mem, addr + 2, (value >> 16) & 0xFF);
+    memory_write_byte(mem, addr + 3, (value >> 24) & 0xFF);
+}
+
 uint16_t memory_read_halfword(Memory *mem, uint32_t addr) {
     // Cortex-M3 Little Endian. Младший байт по младшему адресу.
     uint8_t low = memory_read_byte(mem, addr);

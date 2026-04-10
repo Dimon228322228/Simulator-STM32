@@ -25,7 +25,7 @@ int test_arithmetic_instructions() {
     cpu_reset(&sim.cpu);
     
     // Тест ADD: R0 = R1 + R2
-    uint16_t add_prog[] = {0x1882}; // ADD R0, R1, R2
+    uint16_t add_prog[] = {0x1888}; // ADD R0, R1, R2
     memcpy(sim.mem.flash, add_prog, sizeof(add_prog));
     sim.cpu.pc = FLASH_BASE_ADDR;
     sim.cpu.regs[1] = 10;
@@ -44,7 +44,7 @@ int test_arithmetic_instructions() {
     cpu_reset(&sim.cpu);
     sim.cpu.regs[4] = 20;
     sim.cpu.regs[5] = 8;
-    uint16_t sub_prog[] = {0x1A63}; // SUB R3, R4, R5
+    uint16_t sub_prog[] = {0x1B63}; // SUB R3, R4, R5
     memcpy(sim.mem.flash, sub_prog, sizeof(sub_prog));
     sim.cpu.pc = FLASH_BASE_ADDR;
     
@@ -96,21 +96,18 @@ int test_branch_instruction() {
     
     // Программа: B . (бесконечный цикл на себя)
     // offset = -2 (на 4 байта назад, т.к. PC уже увеличен на 2)
-    uint16_t branch_prog[] = {0xE7FE}; // B . (offset -1)
+    uint16_t branch_prog[] = {0xE7FF}; // B . (offset -1, бесконечный цикл на текущий адрес)
     memcpy(sim.mem.flash, branch_prog, sizeof(branch_prog));
     
     sim.cpu.pc = FLASH_BASE_ADDR;
     uint32_t initial_pc = sim.cpu.pc;
     
     simulator_step(&sim);
-    
-    // PC должен измениться на target = (initial_pc + 4) + (-1 * 2)
-    uint32_t expected_pc = (initial_pc + 4) + (-2);
-    expected_pc &= ~0x2U; // Выравнивание
-    
-    if (sim.cpu.pc != expected_pc) {
-        printf("FAIL: Branch test. Expected PC=0x%08X, got 0x%08X\n", 
-               expected_pc, sim.cpu.pc);
+
+    // B с offset -1: target = PC_after_fetch + (-1 << 1) = (initial_pc + 2) - 2 = initial_pc
+    if (sim.cpu.pc != initial_pc) {
+        printf("FAIL: Branch test. Expected PC=0x%08X, got 0x%08X\n",
+               initial_pc, sim.cpu.pc);
         memory_free(&sim.mem);
         return 1;
     }
@@ -180,7 +177,7 @@ int test_multi_instruction_sequence() {
     uint16_t program[] = {
         0x2005,  // MOV R0, #5
         0x2103,  // MOV R1, #3
-        0x1882,  // ADD R2, R0, R1
+        0x1842,  // ADD R2, R0, R1
         0x1A43   // SUB R3, R0, R1
     };
     

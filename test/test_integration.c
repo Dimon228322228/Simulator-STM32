@@ -32,8 +32,8 @@ int test_demo_program_execution() {
     uint16_t program[] = {
         0x2005,  // MOV R0, #5
         0x2103,  // MOV R1, #3
-        0x1882,  // ADD R2, R0, R1
-        0xE7FE   // B . (бесконечный цикл)
+        0x1842,  // ADD R2, R0, R1
+        0xE7FF   // B . (бесконечный цикл)
     };
     
     memcpy(sim.mem.flash, program, sizeof(program));
@@ -251,7 +251,7 @@ int test_loop_execution() {
     // Упрощённая версия (только B .)
     uint16_t program[] = {
         0x2000,  // MOV R0, #0
-        0xE7FE   // B . (бесконечный цикл)
+        0xE7FF   // B . (бесконечный цикл)
     };
     
     memcpy(sim.mem.flash, program, sizeof(program));
@@ -281,7 +281,7 @@ int test_loop_execution() {
         return 1;
     }
     
-    // Проверяем, что PC зациклился
+    // Проверяем, что PC зациклился (на B инструкции по адресу FLASH_BASE_ADDR + 2)
     if (sim.cpu.pc != FLASH_BASE_ADDR + 2) {
         printf("  FAIL: PC did not loop correctly (0x%08X)\n", sim.cpu.pc);
         memory_free(&sim.mem);

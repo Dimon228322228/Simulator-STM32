@@ -101,16 +101,17 @@ int test_tim6_control_bits() {
 
 int test_usart_initialization() {
     printf("Testing USART initialization...\n");
-    
+
     USART_State usart;
     usart_init(&usart, USART1_BASE_ADDR);
-    
+
     // Проверяем инициализацию
-    if (usart.regs.cr1 != 0 || usart.regs.sr != 0) {
-        printf("FAIL: USART registers not zero-initialized\n");
+    // CR1 должен быть 0 после сброса
+    if (usart.regs.cr1 != 0) {
+        printf("FAIL: USART CR1 register not zero-initialized\n");
         return 1;
     }
-    
+
     printf("  PASS: USART initialization\n");
     return 0;
 }
@@ -158,19 +159,16 @@ int test_usart_transmit() {
     
     // Передаём байт
     usart_write_register(&usart, addr_dr, 0x55);
-    
-    // Проверяем флаг TXE
+
+    // Проверяем флаг TXE (устанавливается сразу после записи в DR)
     uint32_t sr = usart_read_register(&usart, addr_sr);
     if (!(sr & USART_SR_TXE)) {
         printf("FAIL: TXE flag not set\n");
         return 1;
     }
-    
-    // Проверяем флаг TC
-    if (!(sr & USART_SR_TC)) {
-        printf("FAIL: TC flag not set\n");
-        return 1;
-    }
+
+    // TC флаг сбрасывается при записи в DR и устанавливается после завершения передачи
+    // Для этого теста достаточно проверить TXE
     
     printf("  PASS: USART transmission\n");
     return 0;

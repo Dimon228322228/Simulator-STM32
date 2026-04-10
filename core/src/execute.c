@@ -162,365 +162,375 @@ void simulator_step(Simulator *sim) {
     
     // Для 16-битных инструкций определяем тип по маске
     uint16_t opcode = get_bits(instr, 11, 15);
-    
-    // Проверяем условие выполнения инструкции (если есть суффикс cond)
+
+    // В Thumb-16 только branch инструкции могут иметь condition code
+    // Большинство инструкций выполняются всегда (AL condition)
+    // Проверяем условие только для conditional branch (opcode 0b11010)
     uint8_t condition_met = 1;
-    if (opcode != 0b11111) { // Не BX инструкция
-        // Для большинства инструкций проверяем условие
+    if (opcode == 0b11010) { // Conditional branch
         condition_met = check_condition(instr, cpu);
     }
-    
+
     // Если условие не выполняется, пропускаем выполнение
     if (!condition_met) {
-        // Просто увеличиваем PC и продолжаем
         return;
     }
-    
+
     // Для 32-битных инструкций (в будущем)
     // uint32_t instr32 = memory_read_word(mem, cpu->pc);
-    
+
     switch (opcode) {
-        case 0b00100: { // MOV Rd, #imm8 (синтаксис: MOVS Rd, #imm8)
+        case 0b00000: { // ADD Rd, Rn, #imm3
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm3 = get_bits(instr, 6, 8);
+            uint32_t result = cpu->regs[rn] + imm3;
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], imm3, result, 0);
+            printf("[EXEC] ADD R%u, R%u, #%u -> R%u = 0x%08X\n", rd, rn, imm3, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b00001: { // SUB Rd, Rn, #imm3
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm3 = get_bits(instr, 6, 8);
+            uint32_t result = cpu->regs[rn] - imm3;
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], imm3, result, 1);
+            printf("[EXEC] SUB R%u, R%u, #%u -> R%u = 0x%08X\n", rd, rn, imm3, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b00010: { // ADD Rd, #imm8
+            uint32_t rd = get_bits(instr, 8, 10);
+            uint32_t imm8 = get_bits(instr, 0, 7);
+            uint32_t result = cpu->regs[rd] + imm8;
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rd], imm8, result, 0);
+            printf("[EXEC] ADD R%u, #0x%02X -> R%u = 0x%08X\n", rd, imm8, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b00011: { // Group: ADD/SUB/CMP/MOV register-register
+            uint16_t op = get_bits(instr, 9, 10);
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rd = get_bits(instr, 0, 2);
+
+            if (op == 0b00) { // ADD Rd, Rn, Rm
+                uint32_t result = cpu->regs[rn] + cpu->regs[rm];
+                cpu->regs[rd] = result;
+                update_arithmetic_flags(cpu, cpu->regs[rn], cpu->regs[rm], result, 0);
+                printf("[EXEC] ADD R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
+            } else if (op == 0b01) { // SUB Rd, Rn, Rm
+                uint32_t result = cpu->regs[rn] - cpu->regs[rm];
+                cpu->regs[rd] = result;
+                update_arithmetic_flags(cpu, cpu->regs[rn], cpu->regs[rm], result, 1);
+                printf("[EXEC] SUB R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
+            } else if (op == 0b10) { // CMP Rn, Rm
+                uint32_t result = cpu->regs[rn] - cpu->regs[rm];
+                update_arithmetic_flags(cpu, cpu->regs[rn], cpu->regs[rm], result, 1);
+                printf("[EXEC] CMP R%u, R%u\n", rn, rm);
+            } else { // op == 0b11: MOV Rd, Rm
+                cpu->regs[rd] = cpu->regs[rm];
+                update_flags(cpu, cpu->regs[rd], 0);
+                printf("[EXEC] MOV R%u, R%u -> R%u = 0x%08X\n", rd, rm, rd, cpu->regs[rd]);
+            }
+            break;
+        }
+
+        case 0b00100: { // MOV Rd, #imm8
             uint32_t rd = get_bits(instr, 8, 10);
             uint32_t imm8 = get_bits(instr, 0, 7);
             cpu->regs[rd] = imm8;
-            // Обновляем флаги для MOVS
             update_flags(cpu, imm8, 0);
             printf("[EXEC] MOV R%u, #0x%02X -> R%u = 0x%08X\n", rd, imm8, rd, cpu->regs[rd]);
             break;
         }
 
-        case 0b00011: { // Group: ADD/SUB register
-            uint16_t sub_op = get_bits(instr, 9, 10);
+        case 0b00101: { // SUB Rd, #imm8
+            uint32_t rd = get_bits(instr, 8, 10);
+            uint32_t imm8 = get_bits(instr, 0, 7);
+            uint32_t result = cpu->regs[rd] - imm8;
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rd], imm8, result, 1);
+            printf("[EXEC] SUB R%u, #0x%02X -> R%u = 0x%08X\n", rd, imm8, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b00110: { // ADD Rd, Rn, #imm8
+            uint32_t rd = get_bits(instr, 8, 10);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm8 = get_bits(instr, 0, 7);
+            uint32_t result = cpu->regs[rn] + imm8;
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], imm8, result, 0);
+            printf("[EXEC] ADD R%u, R%u, #0x%02X -> R%u = 0x%08X\n", rd, rn, imm8, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b00111: { // SUB Rd, Rn, #imm8
+            uint32_t rd = get_bits(instr, 8, 10);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm8 = get_bits(instr, 0, 7);
+            uint32_t result = cpu->regs[rn] - imm8;
+            cpu->regs[rd] = result;
+            update_arithmetic_flags(cpu, cpu->regs[rn], imm8, result, 1);
+            printf("[EXEC] SUB R%u, R%u, #0x%02X -> R%u = 0x%08X\n", rd, rn, imm8, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b01000: { // TST/NEG/CMP/CMN group
+            uint16_t op = get_bits(instr, 8, 9);
+            uint32_t rm = get_bits(instr, 3, 5);
+            uint32_t rn = get_bits(instr, 0, 2);
+
+            if (op == 0b00) { // AND Rd, Rm (Rd = Rn для совместимости)
+                uint32_t rd = rn;
+                cpu->regs[rd] = cpu->regs[rn] & cpu->regs[rm];
+                update_flags(cpu, cpu->regs[rd], 0);
+                printf("[EXEC] AND R%u, R%u -> R%u = 0x%08X\n", rd, rm, rd, cpu->regs[rd]);
+            } else if (op == 0b01) { // EOR Rd, Rm
+                uint32_t rd = rn;
+                cpu->regs[rd] = cpu->regs[rn] ^ cpu->regs[rm];
+                update_flags(cpu, cpu->regs[rd], 0);
+                printf("[EXEC] EOR R%u, R%u -> R%u = 0x%08X\n", rd, rm, rd, cpu->regs[rd]);
+            } else if (op == 0b10) { // LSL Rd, Rm
+                uint32_t rd = rn;
+                cpu->regs[rd] = cpu->regs[rn] << cpu->regs[rm];
+                update_flags(cpu, cpu->regs[rd], 0);
+                printf("[EXEC] LSL R%u, R%u -> R%u = 0x%08X\n", rd, rm, rd, cpu->regs[rd]);
+            } else { // op == 0b11: NEG Rd, Rm
+                uint32_t rd = rn;
+                cpu->regs[rd] = 0 - cpu->regs[rm];
+                update_arithmetic_flags(cpu, 0, cpu->regs[rm], cpu->regs[rd], 1);
+                printf("[EXEC] NEG R%u, R%u -> R%u = 0x%08X\n", rd, rm, rd, cpu->regs[rd]);
+            }
+            break;
+        }
+
+        case 0b01001: { // ADC/SBC/ROR/MUL group
+            uint16_t op = get_bits(instr, 8, 9);
             uint32_t rm = get_bits(instr, 6, 8);
             uint32_t rn = get_bits(instr, 3, 5);
             uint32_t rd = get_bits(instr, 0, 2);
-            
-            if (sub_op == 0b00) { // ADD Rd, Rn, Rm
-                uint32_t result = cpu->regs[rn] + cpu->regs[rm];
+
+            if (op == 0b00) { // ADC Rd, Rn, Rm
+                uint32_t carry = (cpu->xpsr & 0x100) ? 1 : 0;
+                uint32_t result = cpu->regs[rn] + cpu->regs[rm] + carry;
                 cpu->regs[rd] = result;
                 update_arithmetic_flags(cpu, cpu->regs[rn], cpu->regs[rm], result, 0);
-                printf("[EXEC] ADD R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
-            } else if (sub_op == 0b01) { // SUB Rd, Rn, Rm
-                uint32_t result = cpu->regs[rn] - cpu->regs[rm];
+                printf("[EXEC] ADC R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
+            } else if (op == 0b01) { // SBC Rd, Rn, Rm
+                uint32_t carry = (cpu->xpsr & 0x100) ? 0 : 1;
+                uint32_t result = cpu->regs[rn] - cpu->regs[rm] - carry;
                 cpu->regs[rd] = result;
                 update_arithmetic_flags(cpu, cpu->regs[rn], cpu->regs[rm], result, 1);
-                printf("[EXEC] SUB R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
-            } else {
-                printf("[EXEC] Unknown ADD/SUB variant: 0x%04X\n", instr);
+                printf("[EXEC] SBC R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
+            } else if (op == 0b10) { // ROR Rd, Rn, Rm
+                uint32_t shift = cpu->regs[rm] & 0x1F;
+                cpu->regs[rd] = (cpu->regs[rn] >> shift) | (cpu->regs[rn] << (32 - shift));
+                update_flags(cpu, cpu->regs[rd], 0);
+                printf("[EXEC] ROR R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
+            } else { // op == 0b11: MUL Rd, Rn, Rm
+                cpu->regs[rd] = cpu->regs[rn] * cpu->regs[rm];
+                update_flags(cpu, cpu->regs[rd], 0);
+                printf("[EXEC] MUL R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
             }
+            break;
+        }
+
+        case 0b01010: { // STR Rd, [Rn, Rm]
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t addr = cpu->regs[rn] + cpu->regs[rm];
+            memory_write_word(mem, addr, cpu->regs[rd]);
+            printf("[EXEC] STR R%u, [R%u, R%u]\n", rd, rn, rm);
+            break;
+        }
+
+        case 0b01011: { // STRH Rd, [Rn, Rm]
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t addr = cpu->regs[rn] + cpu->regs[rm];
+            memory_write_halfword(mem, addr, cpu->regs[rd] & 0xFFFF);
+            printf("[EXEC] STRH R%u, [R%u, R%u]\n", rd, rn, rm);
+            break;
+        }
+
+        case 0b01100: { // STRB Rd, [Rn, Rm]
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t addr = cpu->regs[rn] + cpu->regs[rm];
+            memory_write_byte(mem, addr, cpu->regs[rd] & 0xFF);
+            printf("[EXEC] STRB R%u, [R%u, R%u]\n", rd, rn, rm);
+            break;
+        }
+
+        case 0b01101: { // LDR Rd, [Rn, Rm]
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t addr = cpu->regs[rn] + cpu->regs[rm];
+            cpu->regs[rd] = memory_read_word(mem, addr);
+            printf("[EXEC] LDR R%u, [R%u, R%u] -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b01110: { // LDRB Rd, [Rn, Rm]
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t addr = cpu->regs[rn] + cpu->regs[rm];
+            cpu->regs[rd] = memory_read_byte(mem, addr);
+            printf("[EXEC] LDRB R%u, [R%u, R%u] -> R%u = 0x%02X\n", rd, rn, rm, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b01111: { // LDRH Rd, [Rn, Rm]
+            uint32_t rm = get_bits(instr, 6, 8);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t addr = cpu->regs[rn] + cpu->regs[rm];
+            cpu->regs[rd] = memory_read_halfword(mem, addr);
+            printf("[EXEC] LDRH R%u, [R%u, R%u] -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b10000: { // STRB Rd, [Rn, #imm5]
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm5 = get_bits(instr, 6, 10);
+            uint32_t addr = cpu->regs[rn] + imm5;
+            memory_write_byte(mem, addr, cpu->regs[rd] & 0xFF);
+            printf("[EXEC] STRB R%u, [R%u, #%u]\n", rd, rn, imm5);
+            break;
+        }
+
+        case 0b10001: { // LDRB Rd, [Rn, #imm5]
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm5 = get_bits(instr, 6, 10);
+            uint32_t addr = cpu->regs[rn] + imm5;
+            cpu->regs[rd] = memory_read_byte(mem, addr);
+            printf("[EXEC] LDRB R%u, [R%u, #%u] -> R%u = 0x%08X\n", rd, rn, imm5, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b10010: { // STRH Rd, [Rn, #imm5]
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm5 = get_bits(instr, 6, 10);
+            uint32_t addr = cpu->regs[rn] + (imm5 << 1);
+            memory_write_halfword(mem, addr, cpu->regs[rd] & 0xFFFF);
+            printf("[EXEC] STRH R%u, [R%u, #%u]\n", rd, rn, imm5);
+            break;
+        }
+
+        case 0b10011: { // LDRH Rd, [Rn, #imm5]
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm5 = get_bits(instr, 6, 10);
+            uint32_t addr = cpu->regs[rn] + (imm5 << 1);
+            cpu->regs[rd] = memory_read_halfword(mem, addr);
+            printf("[EXEC] LDRH R%u, [R%u, #%u] -> R%u = 0x%08X\n", rd, rn, imm5, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b10100: { // STR Rd, [SP, #imm8]
+            uint32_t rd = get_bits(instr, 8, 10);
+            uint32_t imm8 = get_bits(instr, 0, 7);
+            uint32_t addr = cpu->regs[13] + (imm8 << 2);
+            memory_write_word(mem, addr, cpu->regs[rd]);
+            printf("[EXEC] STR R%u, [SP, #%u]\n", rd, imm8);
+            break;
+        }
+
+        case 0b10101: { // LDR Rd, [SP, #imm8]
+            uint32_t rd = get_bits(instr, 8, 10);
+            uint32_t imm8 = get_bits(instr, 0, 7);
+            uint32_t addr = cpu->regs[13] + (imm8 << 2);
+            cpu->regs[rd] = memory_read_word(mem, addr);
+            printf("[EXEC] LDR R%u, [SP, #%u] -> R%u = 0x%08X\n", rd, imm8, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b10110: { // ADD Rd, PC, #imm8
+            uint32_t rd = get_bits(instr, 8, 10);
+            uint32_t imm8 = get_bits(instr, 0, 7);
+            uint32_t addr = (cpu->pc & ~0x3U) + (imm8 << 2);
+            cpu->regs[rd] = memory_read_word(mem, addr);
+            printf("[EXEC] LDR R%u, [PC, #%u] -> R%u = 0x%08X\n", rd, imm8, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b10111: { // ADD Rd, SP, #imm8
+            uint32_t rd = get_bits(instr, 8, 10);
+            uint32_t imm8 = get_bits(instr, 0, 7);
+            cpu->regs[rd] = cpu->regs[13] + (imm8 << 2);
+            printf("[EXEC] ADD R%u, SP, #%u -> R%u = 0x%08X\n", rd, imm8, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b11000: { // STR Rd, [Rn, #imm5]
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm5 = get_bits(instr, 6, 10);
+            uint32_t addr = cpu->regs[rn] + (imm5 << 2);
+            memory_write_word(mem, addr, cpu->regs[rd]);
+            printf("[EXEC] STR R%u, [R%u, #%u]\n", rd, rn, imm5);
+            break;
+        }
+
+        case 0b11001: { // LDR Rd, [Rn, #imm5]
+            uint32_t rd = get_bits(instr, 0, 2);
+            uint32_t rn = get_bits(instr, 3, 5);
+            uint32_t imm5 = get_bits(instr, 6, 10);
+            uint32_t addr = cpu->regs[rn] + (imm5 << 2);
+            cpu->regs[rd] = memory_read_word(mem, addr);
+            printf("[EXEC] LDR R%u, [R%u, #%u] -> R%u = 0x%08X\n", rd, rn, imm5, rd, cpu->regs[rd]);
+            break;
+        }
+
+        case 0b11010: { // Conditional branch (B cond)
+            int32_t offset = sign_extend(get_bits(instr, 0, 7), 8);
+            uint32_t target = cpu->pc + (offset << 1);
+            cpu->pc = target;
+            printf("[EXEC] B.cond (Offset: %d)\n", offset);
+            break;
+        }
+
+        case 0b11011: { // SVC / SWI
+            printf("[EXEC] SVC instruction at PC 0x%08X\n", current_pc);
             break;
         }
 
         case 0b11100: { // Unconditional Branch (B)
             int32_t offset = sign_extend(get_bits(instr, 0, 10), 11);
-            // Смещение умножается на 2 (выравнивание по полуслову)
-            uint32_t target = (current_pc + 4) + (offset << 1);
-            // Выравнивание по границе слова (маскируем бит 1)
-            target &= ~0x2U;
-
+            uint32_t target = cpu->pc + (offset << 1);
             printf("[EXEC] B 0x%08X (Offset: %d)\n", target, offset);
             cpu->pc = target;
             break;
         }
 
-        // Новые инструкции
-        case 0b00000: { // ADD Rd, Rn, Operand2
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t operand2 = get_operand2(instr, cpu);
-            uint32_t result = cpu->regs[rn] + operand2;
-            cpu->regs[rd] = result;
-            update_arithmetic_flags(cpu, cpu->regs[rn], operand2, result, 0);
-            printf("[EXEC] ADD R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
+        case 0b11101: { // BL / BLX first half (32-bit)
+            printf("[EXEC] BL/BLX first half (32-bit instruction not fully supported)\n");
             break;
         }
 
-        case 0b00001: { // SUB Rd, Rn, Operand2
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t operand2 = get_operand2(instr, cpu);
-            uint32_t result = cpu->regs[rn] - operand2;
-            cpu->regs[rd] = result;
-            update_arithmetic_flags(cpu, cpu->regs[rn], operand2, result, 1);
-            printf("[EXEC] SUB R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b00010: { // AND Rd, Rn, Operand2
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t operand2 = get_operand2(instr, cpu);
-            cpu->regs[rd] = cpu->regs[rn] & operand2;
-            update_flags(cpu, cpu->regs[rd], 0);
-            printf("[EXEC] AND R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b00101: { // EOR Rd, Rn, Operand2
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t operand2 = get_operand2(instr, cpu);
-            cpu->regs[rd] = cpu->regs[rn] ^ operand2;
-            update_flags(cpu, cpu->regs[rd], 0);
-            printf("[EXEC] EOR R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b00110: { // LSL Rd, Rm, #imm5
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rm = get_bits(instr, 3, 5);
-            uint32_t imm5 = get_bits(instr, 6, 10);
-            cpu->regs[rd] = cpu->regs[rm] << imm5;
-            update_flags(cpu, cpu->regs[rd], 0);
-            printf("[EXEC] LSL R%u, R%u, #%u -> R%u = 0x%08X\n", rd, rm, imm5, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b00111: { // LSR Rd, Rm, #imm5
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rm = get_bits(instr, 3, 5);
-            uint32_t imm5 = get_bits(instr, 6, 10);
-            cpu->regs[rd] = cpu->regs[rm] >> imm5;
-            update_flags(cpu, cpu->regs[rd], 0);
-            printf("[EXEC] LSR R%u, R%u, #%u -> R%u = 0x%08X\n", rd, rm, imm5, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b01000: { // ASR Rd, Rm, #imm5
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rm = get_bits(instr, 3, 5);
-            uint32_t imm5 = get_bits(instr, 6, 10);
-            if (cpu->regs[rm] & 0x80000000) {
-                // Отрицательное число - арифметический сдвиг
-                cpu->regs[rd] = (cpu->regs[rm] >> imm5) | (0xFFFFFFFF << (32 - imm5));
-            } else {
-                cpu->regs[rd] = cpu->regs[rm] >> imm5;
-            }
-            update_flags(cpu, cpu->regs[rd], 0);
-            printf("[EXEC] ASR R%u, R%u, #%u -> R%u = 0x%08X\n", rd, rm, imm5, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b01001: { // ADC Rd, Rn, Operand2
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t operand2 = get_operand2(instr, cpu);
-            uint32_t carry = (cpu->xpsr & 0x100) ? 1 : 0;
-            uint32_t result = cpu->regs[rn] + operand2 + carry;
-            cpu->regs[rd] = result;
-            update_arithmetic_flags(cpu, cpu->regs[rn], operand2, result, 0);
-            printf("[EXEC] ADC R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b01010: { // SBC Rd, Rn, Operand2
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t operand2 = get_operand2(instr, cpu);
-            uint32_t carry = (cpu->xpsr & 0x100) ? 0 : 1; // Инвертируем флаг для SBC
-            uint32_t result = cpu->regs[rn] - operand2 - carry;
-            cpu->regs[rd] = result;
-            update_arithmetic_flags(cpu, cpu->regs[rn], operand2, result, 1);
-            printf("[EXEC] SBC R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b01011: { // ROR Rd, Rm, #imm5
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rm = get_bits(instr, 3, 5);
-            uint32_t imm5 = get_bits(instr, 6, 10);
-            cpu->regs[rd] = (cpu->regs[rm] >> imm5) | (cpu->regs[rm] << (32 - imm5));
-            update_flags(cpu, cpu->regs[rd], 0);
-            printf("[EXEC] ROR R%u, R%u, #%u -> R%u = 0x%08X\n", rd, rm, imm5, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b01100: { // TST Rd, Operand2
-            uint32_t rd = get_bits(instr, 3, 5);
-            uint32_t operand2 = get_operand2(instr, cpu);
-            uint32_t result = cpu->regs[rd] & operand2;
-            // Обновляем флаги
-            update_flags(cpu, result, 0);
-            printf("[EXEC] TST R%u, #0x%08X -> Result = 0x%08X\n", rd, operand2, result);
-            break;
-        }
-
-        case 0b01101: { // NEG Rd, Rm
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rm = get_bits(instr, 3, 5);
-            cpu->regs[rd] = ~cpu->regs[rm] + 1;
-            update_arithmetic_flags(cpu, 0, cpu->regs[rm], cpu->regs[rd], 1);
-            printf("[EXEC] NEG R%u, R%u -> R%u = 0x%08X\n", rd, rm, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b01110: { // CMP Rd, Operand2
-            uint32_t rd = get_bits(instr, 3, 5);
-            uint32_t operand2 = get_operand2(instr, cpu);
-            uint32_t result = cpu->regs[rd] - operand2;
-            // Обновляем флаги
-            update_arithmetic_flags(cpu, cpu->regs[rd], operand2, result, 1);
-            printf("[EXEC] CMP R%u, #0x%08X -> Result = 0x%08X\n", rd, operand2, result);
-            break;
-        }
-
-        case 0b01111: { // CMN Rd, Operand2
-            uint32_t rd = get_bits(instr, 3, 5);
-            uint32_t operand2 = get_operand2(instr, cpu);
-            uint32_t result = cpu->regs[rd] + operand2;
-            // Обновляем флаги
-            update_arithmetic_flags(cpu, cpu->regs[rd], operand2, result, 0);
-            printf("[EXEC] CMN R%u, #0x%08X -> Result = 0x%08X\n", rd, operand2, result);
-            break;
-        }
-
-        case 0b10000: { // ORR Rd, Rn, Operand2
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t operand2 = get_operand2(instr, cpu);
-            cpu->regs[rd] = cpu->regs[rn] | operand2;
-            update_flags(cpu, cpu->regs[rd], 0);
-            printf("[EXEC] ORR R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b10001: { // MUL Rd, Rn, Rm
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t rm = get_bits(instr, 0, 2);
-            cpu->regs[rd] = cpu->regs[rn] * cpu->regs[rm];
-            update_flags(cpu, cpu->regs[rd], 0);
-            printf("[EXEC] MUL R%u, R%u, R%u -> R%u = 0x%08X\n", rd, rn, rm, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b10010: { // BIC Rd, Rn, Operand2
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t operand2 = get_operand2(instr, cpu);
-            cpu->regs[rd] = cpu->regs[rn] & ~operand2;
-            update_flags(cpu, cpu->regs[rd], 0);
-            printf("[EXEC] BIC R%u, R%u, #0x%08X -> R%u = 0x%08X\n", rd, rn, operand2, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b10011: { // MVN Rd, Operand2
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t operand2 = get_operand2(instr, cpu);
-            cpu->regs[rd] = ~operand2;
-            update_flags(cpu, cpu->regs[rd], 0);
-            printf("[EXEC] MVN R%u, #0x%08X -> R%u = 0x%08X\n", rd, operand2, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b10100: { // ADDW Rd, Rn, #imm12
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t imm12 = get_bits(instr, 0, 11);
-            cpu->regs[rd] = cpu->regs[rn] + imm12;
-            update_arithmetic_flags(cpu, cpu->regs[rn], imm12, cpu->regs[rd], 0);
-            printf("[EXEC] ADDW R%u, R%u, #0x%03X -> R%u = 0x%08X\n", rd, rn, imm12, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b10101: { // SUBW Rd, Rn, #imm12
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t imm12 = get_bits(instr, 0, 11);
-            cpu->regs[rd] = cpu->regs[rn] - imm12;
-            update_arithmetic_flags(cpu, cpu->regs[rn], imm12, cpu->regs[rd], 1);
-            printf("[EXEC] SUBW R%u, R%u, #0x%03X -> R%u = 0x%08X\n", rd, rn, imm12, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b10110: { // MOVW Rd, #imm16
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t imm16 = get_bits(instr, 0, 11) | (get_bits(instr, 12, 15) << 12);
-            cpu->regs[rd] = imm16;
-            update_flags(cpu, imm16, 0);
-            printf("[EXEC] MOVW R%u, #0x%04X -> R%u = 0x%08X\n", rd, imm16, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b10111: { // MOVT Rd, #imm16
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t imm16 = get_bits(instr, 0, 11) | (get_bits(instr, 12, 15) << 12);
-            cpu->regs[rd] = (cpu->regs[rd] & 0x0000FFFF) | (imm16 << 16);
-            update_flags(cpu, cpu->regs[rd], 0);
-            printf("[EXEC] MOVT R%u, #0x%04X -> R%u = 0x%08X\n", rd, imm16, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b11000: { // LDR Rd, [Rn, #imm5]
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t imm5 = get_bits(instr, 0, 2) | (get_bits(instr, 6, 10) << 3);
-            uint32_t addr = cpu->regs[rn] + imm5;
-            cpu->regs[rd] = memory_read_word(mem, addr);
-            printf("[EXEC] LDR R%u, [%u, #0x%02X] -> R%u = 0x%08X\n", rd, rn, imm5, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b11001: { // STR Rd, [Rn, #imm5]
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t imm5 = get_bits(instr, 0, 2) | (get_bits(instr, 6, 10) << 3);
-            uint32_t addr = cpu->regs[rn] + imm5;
-            memory_write_byte(mem, addr, cpu->regs[rd] & 0xFF);
-            memory_write_byte(mem, addr + 1, (cpu->regs[rd] >> 8) & 0xFF);
-            memory_write_byte(mem, addr + 2, (cpu->regs[rd] >> 16) & 0xFF);
-            memory_write_byte(mem, addr + 3, (cpu->regs[rd] >> 24) & 0xFF);
-            printf("[EXEC] STR R%u, [%u, #0x%02X]\n", rd, rn, imm5);
-            break;
-        }
-
-        case 0b11010: { // LDRB Rd, [Rn, #imm5]
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t imm5 = get_bits(instr, 0, 2) | (get_bits(instr, 6, 10) << 3);
-            uint32_t addr = cpu->regs[rn] + imm5;
-            cpu->regs[rd] = memory_read_byte(mem, addr);
-            printf("[EXEC] LDRB R%u, [%u, #0x%02X] -> R%u = 0x%02X\n", rd, rn, imm5, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b11011: { // STRB Rd, [Rn, #imm5]
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t imm5 = get_bits(instr, 0, 2) | (get_bits(instr, 6, 10) << 3);
-            uint32_t addr = cpu->regs[rn] + imm5;
-            memory_write_byte(mem, addr, cpu->regs[rd] & 0xFF);
-            printf("[EXEC] STRB R%u, [%u, #0x%02X]\n", rd, rn, imm5);
-            break;
-        }
-
-        case 0b11101: { // LDRH Rd, [Rn, #imm5]
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t imm5 = get_bits(instr, 0, 2) | (get_bits(instr, 6, 10) << 3);
-            uint32_t addr = cpu->regs[rn] + imm5;
-            cpu->regs[rd] = memory_read_halfword(mem, addr);
-            printf("[EXEC] LDRH R%u, [%u, #0x%02X] -> R%u = 0x%04X\n", rd, rn, imm5, rd, cpu->regs[rd]);
-            break;
-        }
-
-        case 0b11110: { // STRH Rd, [Rn, #imm5]
-            uint32_t rd = get_bits(instr, 8, 10);
-            uint32_t rn = get_bits(instr, 3, 5);
-            uint32_t imm5 = get_bits(instr, 0, 2) | (get_bits(instr, 6, 10) << 3);
-            uint32_t addr = cpu->regs[rn] + imm5;
-            memory_write_byte(mem, addr, cpu->regs[rd] & 0xFF);
-            memory_write_byte(mem, addr + 1, (cpu->regs[rd] >> 8) & 0xFF);
-            printf("[EXEC] STRH R%u, [%u, #0x%02X]\n", rd, rn, imm5);
+        case 0b11110: { // BL / BLX second half (32-bit)
+            printf("[EXEC] BL/BLX second half (32-bit instruction not fully supported)\n");
             break;
         }
 
         case 0b11111: { // BX Rd
             uint32_t rd = get_bits(instr, 3, 5);
             uint32_t target = cpu->regs[rd];
-            // Убираем бит 0 для Thumb режима
-            cpu->pc = target & ~0x1;
+            cpu->pc = target & ~0x1U;
             printf("[EXEC] BX R%u -> PC = 0x%08X\n", rd, cpu->pc);
             break;
         }
