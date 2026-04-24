@@ -1,0 +1,1 @@
+/usr/bin/cc CMakeFiles/test_instructions.dir/test/test_instructions.c.o -o test_instructions  libcore_static.a 

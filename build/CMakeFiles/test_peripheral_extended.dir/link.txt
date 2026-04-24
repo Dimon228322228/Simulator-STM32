@@ -1,0 +1,1 @@
+/usr/bin/cc CMakeFiles/test_peripheral_extended.dir/test/test_peripheral_extended.c.o -o test_peripheral_extended  libcore_static.a 

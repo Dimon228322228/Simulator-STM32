@@ -1,0 +1,11 @@
+/mnt/c/Code/embedded_programming/project/Simulator-STM32/build/CMakeFiles/core_static.dir
+/mnt/c/Code/embedded_programming/project/Simulator-STM32/build/CMakeFiles/stm32_sim.dir
+/mnt/c/Code/embedded_programming/project/Simulator-STM32/build/CMakeFiles/test_gpio.dir
+/mnt/c/Code/embedded_programming/project/Simulator-STM32/build/CMakeFiles/test_simulator.dir
+/mnt/c/Code/embedded_programming/project/Simulator-STM32/build/CMakeFiles/test_instructions.dir
+/mnt/c/Code/embedded_programming/project/Simulator-STM32/build/CMakeFiles/test_peripheral.dir
+/mnt/c/Code/embedded_programming/project/Simulator-STM32/build/CMakeFiles/test_extended_instructions.dir
+/mnt/c/Code/embedded_programming/project/Simulator-STM32/build/CMakeFiles/test_peripheral_extended.dir
+/mnt/c/Code/embedded_programming/project/Simulator-STM32/build/CMakeFiles/test_integration.dir
+/mnt/c/Code/embedded_programming/project/Simulator-STM32/build/CMakeFiles/edit_cache.dir
+/mnt/c/Code/embedded_programming/project/Simulator-STM32/build/CMakeFiles/rebuild_cache.dir

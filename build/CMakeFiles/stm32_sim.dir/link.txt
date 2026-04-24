@@ -1,0 +1,1 @@
+/usr/bin/cc CMakeFiles/stm32_sim.dir/core/main.c.o -o stm32_sim  libcore_static.a 

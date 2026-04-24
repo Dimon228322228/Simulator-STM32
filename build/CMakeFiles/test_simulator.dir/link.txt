@@ -1,0 +1,1 @@
+/usr/bin/cc CMakeFiles/test_simulator.dir/test/test_simulator.c.o -o test_simulator  libcore_static.a 
