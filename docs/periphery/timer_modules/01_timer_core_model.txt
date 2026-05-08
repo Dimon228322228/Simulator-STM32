@@ -1,0 +1,32 @@
+Модуль: 01_timer_core_model
+
+Назначение
+- Моделирует внутреннюю логику TIM6 в дискретном времени проекта.
+- База времени: 1 instruction-tick = выполнение 1 инструкции CPU.
+
+Область ответственности
+- Обработка запуска/остановки по CR1.CEN.
+- Инкремент CNT и генерация update event при переполнении относительно ARR.
+- Установка SR.UIF при update event.
+- Поддержка программного update через EGR.UG.
+
+Интерфейс (совместимый с текущим проектом)
+- tim6_init(TIM6_State*): инициализация структуры TIM6.
+- tim6_reset(TIM6_State*): reset-значения регистров/состояния.
+- tim6_update_counter(TIM6_State*): один instruction-tick таймера.
+- tim6_write_register(... EGR ...): путь программной генерации update event.
+
+Внутренние данные (рекомендуется добавить)
+- psc_counter: внутренний делитель для реализации PSC.
+
+Требования
+- Если CR1.CEN=0, tim6_update_counter не изменяет CNT.
+- CNT должен увеличиваться с учетом PSC: один шаг CNT на каждые (PSC+1) instruction-ticks.
+- При update event обязательно ставится SR.UIF независимо от DIER.UIE.
+- DIER.UIE влияет только на формирование IRQ-запроса, не на факт update event.
+- Поведение детерминировано и не зависит от wall-clock.
+
+Критерии приемки
+- При PSC=0, ARR=3 update event каждые 4 instruction-ticks.
+- При PSC=1, ARR=3 update event каждые 8 instruction-ticks.
+- SR.UIF выставляется на каждом update event.

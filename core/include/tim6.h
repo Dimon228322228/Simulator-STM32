@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 #include "memory_map.h"
+#include "nvic.h"
+#include "nvic_extended.h"
 
 // TIM6 Register Addresses
 #define TIM6_BASE_ADDR          0x40001400U
@@ -68,6 +70,7 @@ typedef struct {
 typedef struct {
     TIM6_Registers regs;
     uint32_t base_address;
+    uint32_t psc_counter;
 } TIM6_State;
 
 // Initialize TIM6 state
@@ -84,5 +87,8 @@ void tim6_write_register(TIM6_State *tim6, uint32_t addr, uint32_t value);
 
 // Update TIM6 counter (called periodically)
 void tim6_update_counter(TIM6_State *tim6);
+
+// Recalculate and propagate TIM6 IRQ pending into NVIC
+void tim6_update_irq_pending(TIM6_State *tim6, NVIC_State *nvic);
 
 #endif // TIM6_H

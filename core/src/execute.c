@@ -479,6 +479,10 @@ void simulator_step(Simulator *sim) {
         cpu->pc = 0xFFFFFFFFU;
         break;
     }
+
+    /* 5. Peripheral tick: one timer tick per executed instruction */
+    tim6_update_counter(&sim->tim6);
+    tim6_update_irq_pending(&sim->tim6, &sim->nvic);
 }
 
 /**

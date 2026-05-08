@@ -8,6 +8,7 @@ void tim6_init(TIM6_State *tim6) {
     
     // Set base address
     tim6->base_address = TIM6_BASE_ADDR;
+    tim6->psc_counter = 0;
 }
 
 void tim6_reset(TIM6_State *tim6) {
@@ -21,6 +22,7 @@ void tim6_reset(TIM6_State *tim6) {
     tim6->regs.cnt = 0;
     tim6->regs.psc = 0;
     tim6->regs.arr = 0;
+    tim6->psc_counter = 0;
 }
 
 // Helper function to get register offset from address
@@ -92,12 +94,8 @@ void tim6_write_register(TIM6_State *tim6, uint32_t addr, uint32_t value) {
         case TIM6_EGR_OFFSET:
             // Generate events
             if (value & TIM6_EGR_UG) {
-                // Update generation
-                // In real hardware, this would trigger an update event
-                // For simulation, we just set the update flag if enabled
-                if (tim6->regs.dier & TIM6_DIER_UIE) {
-                    tim6->regs.sr |= TIM6_SR_UIF;
-                }
+                // Update generation always raises UIF (IRQ path decided separately)
+                tim6->regs.sr |= TIM6_SR_UIF;
             }
             if (value & TIM6_EGR_TG) {
                 // Trigger generation
@@ -120,20 +118,28 @@ void tim6_write_register(TIM6_State *tim6, uint32_t addr, uint32_t value) {
 }
 
 void tim6_update_counter(TIM6_State *tim6) {
-    // Simple counter update logic
-    // In a real implementation, this would be called periodically based on clock
     if (tim6->regs.cr1 & TIM6_CR1_CEN) {
-        // Increment counter
-        tim6->regs.cnt++;
-        
-        // Check for overflow
-        if (tim6->regs.cnt > tim6->regs.arr) {
-            tim6->regs.cnt = 0;
-            
-            // Set update interrupt flag if enabled
-            if (tim6->regs.dier & TIM6_DIER_UIE) {
+        tim6->psc_counter++;
+
+        if (tim6->psc_counter >= (tim6->regs.psc + 1U)) {
+            tim6->psc_counter = 0;
+            tim6->regs.cnt++;
+
+            if (tim6->regs.cnt > tim6->regs.arr) {
+                tim6->regs.cnt = 0;
                 tim6->regs.sr |= TIM6_SR_UIF;
             }
         }
+    }
+}
+
+void tim6_update_irq_pending(TIM6_State *tim6, NVIC_State *nvic) {
+    uint8_t should_pend = ((tim6->regs.sr & TIM6_SR_UIF) != 0U) &&
+                          ((tim6->regs.dier & TIM6_DIER_UIE) != 0U);
+
+    if (should_pend) {
+        nvic_set_pending(nvic, NVIC_IRQ_TIM6);
+    } else {
+        nvic_clear_pending(nvic, NVIC_IRQ_TIM6);
     }
 }
