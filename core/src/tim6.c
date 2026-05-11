@@ -9,6 +9,7 @@ void tim6_init(TIM6_State *tim6) {
     // Set base address
     tim6->base_address = TIM6_BASE_ADDR;
     tim6->psc_counter = 0;
+    tim6->update_event_count = 0;
 }
 
 void tim6_reset(TIM6_State *tim6) {
@@ -23,6 +24,7 @@ void tim6_reset(TIM6_State *tim6) {
     tim6->regs.psc = 0;
     tim6->regs.arr = 0;
     tim6->psc_counter = 0;
+    tim6->update_event_count = 0;
 }
 
 // Helper function to get register offset from address
@@ -128,6 +130,7 @@ void tim6_update_counter(TIM6_State *tim6) {
             if (tim6->regs.cnt > tim6->regs.arr) {
                 tim6->regs.cnt = 0;
                 tim6->regs.sr |= TIM6_SR_UIF;
+                tim6->update_event_count++;
             }
         }
     }

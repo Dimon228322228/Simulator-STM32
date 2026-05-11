@@ -4,6 +4,7 @@
 #include "memory.h"
 #include "cpu_state.h"
 #include "execute.h"
+#include "cube_script.h"
 
 // Глобальная статистика выполнения
 typedef struct {
@@ -93,6 +94,7 @@ int main(int argc, char *argv[]) {
     SimulatorStats stats = {0, 0, 0};
     
     const char *firmware_file = NULL;
+    const char *script_file = NULL;
     int run_demo = 1;  // По умолчанию запускаем демо
     int max_steps = 100;
     
@@ -107,6 +109,9 @@ int main(int argc, char *argv[]) {
         }
         else if (strcmp(argv[i], "--max-steps") == 0 && i + 1 < argc) {
             max_steps = atoi(argv[++i]);
+        }
+        else if (strcmp(argv[i], "--script") == 0 && i + 1 < argc) {
+            script_file = argv[++i];
         }
         else if (argv[i][0] != '-') {
             firmware_file = argv[i];
@@ -148,6 +153,11 @@ int main(int argc, char *argv[]) {
 
     // Инициализация CPU
     cpu_reset(&sim.cpu);
+    sim.tick_counter = 0;
+    sim.cpu_in_isr = 0;
+    sim.script_pc = 0;
+    sim.delay_counter = 0;
+    sim.script_active = 0;
 
     // Устанавливаем начальный PC
     sim.cpu.pc = FLASH_BASE_ADDR;
@@ -170,6 +180,15 @@ int main(int argc, char *argv[]) {
         
         memcpy(sim.mem.flash, program, sizeof(program));
         printf("[INIT] Loaded demo program (%zu bytes)\n", sizeof(program));
+    }
+
+    if (script_file) {
+        if (!cube_script_parse_file(script_file, &sim.script)) {
+            fprintf(stderr, "[ERROR] Failed to parse script: %s\n", script_file);
+            memory_free(&sim.mem);
+            return 1;
+        }
+        sim.script_active = 1;
     }
 
     printf("\nStarting simulation...\n");
